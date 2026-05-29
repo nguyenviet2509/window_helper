@@ -1,0 +1,12 @@
+{
+  "name": "pt-automation",
+  "version": "0.1.0",
+  "dependencies": [
+    "opencv4",
+    "nlohmann-json",
+    {
+      "name": "imgui",
+      "features": ["dx11-binding", "win32-binding"]
+    }
+  ]
+}
