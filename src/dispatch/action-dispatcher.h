@@ -12,6 +12,8 @@
 #include "../combat/combat-fsm.h"
 #include "priority.h"
 
+class PotRefillScheduler;
+
 class ActionDispatcher {
 public:
     ActionDispatcher(InputScheduler& sched, CombatFsm& combat, const AppConfig& cfg);
@@ -19,6 +21,7 @@ public:
     void onVisionTick(const VisionState& v);
 
     void updateConfig(const AppConfig& cfg);
+    void setRefillScheduler(PotRefillScheduler* r);
 
     // Optional debug logger (signature: void(const char* tag, int priority, WORD vk)).
     void setLogger(std::function<void(const char*, int, WORD)> log) { log_ = std::move(log); }
@@ -30,5 +33,6 @@ private:
     CombatFsm& combat_;
     PotEvaluator pots_;
     AppConfig cfg_;
+    PotRefillScheduler* refill_ = nullptr;
     std::function<void(const char*, int, WORD)> log_;
 };

@@ -61,6 +61,9 @@ static void toJson(json& j, const CombatConfig& c) {
         {"waitMpGate", c.waitMpGate},
         {"waitMpGateThreshold", c.waitMpGateThreshold},
         {"attackCooldownMs", c.attackCooldownMs},
+        {"engagementLockMs", c.engagementLockMs},
+        {"engagementLockJitterMs", c.engagementLockJitterMs},
+        {"enableMousePath", c.enableMousePath},
         {"buffs", buffs},
     };
 }
@@ -76,6 +79,9 @@ static void fromJson(const json& j, CombatConfig& c) {
     if (j.contains("waitMpGate")) c.waitMpGate = j["waitMpGate"];
     if (j.contains("waitMpGateThreshold")) c.waitMpGateThreshold = j["waitMpGateThreshold"];
     if (j.contains("attackCooldownMs")) c.attackCooldownMs = j["attackCooldownMs"];
+    if (j.contains("engagementLockMs")) c.engagementLockMs = j["engagementLockMs"];
+    if (j.contains("engagementLockJitterMs")) c.engagementLockJitterMs = j["engagementLockJitterMs"];
+    if (j.contains("enableMousePath")) c.enableMousePath = j["enableMousePath"];
     if (j.contains("buffs") && j["buffs"].is_array()) {
         c.buffs.clear();
         for (const auto& bj : j["buffs"]) {
@@ -86,6 +92,53 @@ static void fromJson(const json& j, CombatConfig& c) {
     }
 }
 
+static void toJson(json& j, const PotRefillSlot& s) {
+    j = json{ {"intervalSec", s.intervalSec} };
+}
+
+static void fromJson(const json& j, PotRefillSlot& s) {
+    if (j.contains("intervalSec")) s.intervalSec = j["intervalSec"];
+}
+
+static void toJson(json& j, const PotRefillConfig& r) {
+    json jhp, jsp, jmp;
+    toJson(jhp, r.hp); toJson(jsp, r.sp); toJson(jmp, r.mp);
+    j = json{
+        {"enabled", r.enabled},
+        {"inventoryToggleKey", (int)r.inventoryToggleKey},
+        {"inventoryOpenDelayMs", r.inventoryOpenDelayMs},
+        {"inventoryCloseDelayMs", r.inventoryCloseDelayMs},
+        {"mouseMoveDelayMs", r.mouseMoveDelayMs},
+        {"postHotkeyDelayMs", r.postHotkeyDelayMs},
+        {"refillTimeoutMs", r.refillTimeoutMs},
+        {"hpCriticalAbortThreshold", r.hpCriticalAbortThreshold},
+        {"abortBackoffMs", r.abortBackoffMs},
+        {"hp", jhp}, {"sp", jsp}, {"mp", jmp},
+    };
+}
+
+static void fromJson(const json& j, PotRefillConfig& r) {
+    if (j.contains("enabled")) r.enabled = j["enabled"];
+    if (j.contains("inventoryToggleKey")) r.inventoryToggleKey = (WORD)j["inventoryToggleKey"].get<int>();
+    if (j.contains("inventoryOpenDelayMs")) r.inventoryOpenDelayMs = j["inventoryOpenDelayMs"];
+    if (j.contains("inventoryCloseDelayMs")) r.inventoryCloseDelayMs = j["inventoryCloseDelayMs"];
+    if (j.contains("mouseMoveDelayMs")) r.mouseMoveDelayMs = j["mouseMoveDelayMs"];
+    if (j.contains("postHotkeyDelayMs")) r.postHotkeyDelayMs = j["postHotkeyDelayMs"];
+    if (j.contains("refillTimeoutMs")) r.refillTimeoutMs = j["refillTimeoutMs"];
+    if (j.contains("hpCriticalAbortThreshold")) r.hpCriticalAbortThreshold = j["hpCriticalAbortThreshold"];
+    if (j.contains("abortBackoffMs")) r.abortBackoffMs = j["abortBackoffMs"];
+    if (j.contains("hp")) fromJson(j["hp"], r.hp);
+    if (j.contains("sp")) fromJson(j["sp"], r.sp);
+    if (j.contains("mp")) fromJson(j["mp"], r.mp);
+}
+
+static const char* backendToString(BackendKind k) {
+    return k == BackendKind::PostMessage ? "PostMessage" : "SendInput";
+}
+static BackendKind backendFromString(const std::string& s) {
+    return s == "PostMessage" ? BackendKind::PostMessage : BackendKind::SendInput;
+}
+
 bool ConfigLoader::load(const std::string& path, AppConfig& out) {
     std::ifstream f(path);
     if (!f.good()) return false;
@@ -93,6 +146,9 @@ bool ConfigLoader::load(const std::string& path, AppConfig& out) {
     try { f >> j; } catch (...) { return false; }
     if (j.contains("pot"))      fromJson(j["pot"], out.pot);
     if (j.contains("combat"))   fromJson(j["combat"], out.combat);
+    if (j.contains("refill"))   fromJson(j["refill"], out.refill);
+    if (j.contains("defaultBackend") && j["defaultBackend"].is_string())
+        out.defaultBackend = backendFromString(j["defaultBackend"].get<std::string>());
     if (j.contains("advanced")) advancedRaw_ = j["advanced"];
     return true;
 }
@@ -101,6 +157,8 @@ bool ConfigLoader::save(const std::string& path, const AppConfig& in) const {
     json j;
     toJson(j["pot"], in.pot);
     toJson(j["combat"], in.combat);
+    toJson(j["refill"], in.refill);
+    j["defaultBackend"] = backendToString(in.defaultBackend);
     if (!advancedRaw_.is_null()) j["advanced"] = advancedRaw_;
 
     // Atomic write: temp -> rename.

@@ -1,4 +1,5 @@
 #include "vision-pipeline.h"
+#include "../core/logger.h"
 #include <chrono>
 
 VisionPipeline::VisionPipeline(IFrameSource& src, BarConfig hp, BarConfig mp, BarConfig sp)
@@ -19,15 +20,29 @@ void VisionPipeline::stop() {
     if (th_.joinable()) th_.join();
 }
 
+bool VisionPipeline::snapshotLatest(cv::Mat& out) {
+    std::lock_guard<std::mutex> g(frameMu_);
+    if (latestBgra_.empty()) return false;
+    out = latestBgra_.clone();
+    return true;
+}
+
 void VisionPipeline::runLoop() {
     using clock = std::chrono::steady_clock;
     const auto period = std::chrono::milliseconds(50);          // 20 Hz target
     auto next = clock::now();
 
     Frame f;
+    bool loggedFrameSize = false;
     while (running_.load()) {
         next += period;
         if (src_.acquire(f, 100)) {
+            if (!loggedFrameSize) {
+                loggedFrameSize = true;
+                Logger::instance().logf(LogLevel::Info,
+                    "[vision] FIRST FRAME SIZE: %d x %d (cols x rows)",
+                    f.bgra.cols, f.bgra.rows);
+            }
             double hpRaw = det_.computeFillRatio(f.bgra, hpCfg_.region, hpCfg_.hues);
             double mpRaw = det_.computeFillRatio(f.bgra, mpCfg_.region, mpCfg_.hues);
             double spRaw = det_.computeFillRatio(f.bgra, spCfg_.region, spCfg_.hues);
@@ -38,6 +53,9 @@ void VisionPipeline::runLoop() {
             s.spPct = spEma_.update(spRaw);
             s.valid = true;
             s.seq = f.seq;
+
+            // Publish latest frame for ad-hoc samplers (e.g. inventory pot-empty probe).
+            { std::lock_guard<std::mutex> g(frameMu_); latestBgra_ = f.bgra.clone(); }
 
             std::function<void(const VisionState&)> cb;
             { std::lock_guard<std::mutex> g(cbMu_); cb = cb_; }

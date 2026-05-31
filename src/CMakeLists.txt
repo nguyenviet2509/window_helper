@@ -11,6 +11,7 @@ add_executable(WindowHelper WIN32
     input/postmessage-backend.cpp
     input/send-input-backend.cpp
     input/input-scheduler.cpp
+    input/mouse-path.cpp
     core/humanizer.cpp
     core/output-gate.cpp
     core/capture-health-fsm.cpp
@@ -18,6 +19,7 @@ add_executable(WindowHelper WIN32
     combat/pot-evaluator.cpp
     combat/combat-activity-monitor.cpp
     combat/combat-fsm.cpp
+    combat/pot-refill-scheduler.cpp
     dispatch/action-dispatcher.cpp
     config/config-loader.cpp
     ui/main-window.cpp
@@ -36,7 +38,18 @@ target_link_libraries(WindowHelper PRIVATE
 
 target_compile_definitions(WindowHelper PRIVATE _WIN32_WINNT=0x0A00)
 
+# OUTPUT_NAME random theo timestamp build để né Xingcode3 file-name signature.
+# User có thể override bằng -DWH_OUTPUT_NAME=foo.
+if(NOT DEFINED WH_OUTPUT_NAME)
+    string(TIMESTAMP _wh_ts "%s")
+    string(RANDOM LENGTH 5 ALPHABET "abcdefghijklmnopqrstuvwxyz0123456789"
+           RANDOM_SEED ${_wh_ts} _wh_suffix)
+    set(WH_OUTPUT_NAME "svc_${_wh_suffix}")
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/.last-output-name.txt" "${WH_OUTPUT_NAME}")
+message(STATUS "WindowHelper OUTPUT_NAME = ${WH_OUTPUT_NAME}")
+
 set_target_properties(WindowHelper PROPERTIES
-    OUTPUT_NAME "WindowHelper"
+    OUTPUT_NAME "${WH_OUTPUT_NAME}"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

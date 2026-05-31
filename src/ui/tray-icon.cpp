@@ -28,10 +28,10 @@ void TrayIcon::onMessage(WPARAM /*wp*/, LPARAM lp) {
 
 void TrayIcon::showContextMenu() {
     HMENU m = CreatePopupMenu();
-    AppendMenuW(m, MF_STRING, kMenuToggleAuto, L"Toggle AUTO");
-    AppendMenuW(m, MF_STRING, kMenuShow,       L"Show window");
+    AppendMenuW(m, MF_STRING, kMenuToggleAuto, L"Bật/Tắt AUTO");
+    AppendMenuW(m, MF_STRING, kMenuShow,       L"Hiện cửa sổ");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, kMenuExit,       L"Exit");
+    AppendMenuW(m, MF_STRING, kMenuExit,       L"Thoát");
 
     POINT p; GetCursorPos(&p);
     SetForegroundWindow(owner_);

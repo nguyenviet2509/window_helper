@@ -23,9 +23,12 @@ public:
 
     // Callbacks fired from UI thread (e.g. AUTO toggle).
     void setOnCombatToggle(std::function<void(bool)> cb) { onCombatToggle_ = std::move(cb); }
+    // Fires after debounced flush (config saved). Use to propagate live edits to runtime systems.
+    void setOnConfigChanged(std::function<void(const AppConfig&)> cb) { onConfigChanged_ = std::move(cb); }
 
     void attachTray(TrayIcon* t)        { tray_ = t; }
     void attachHotkey(HotkeyManager* h) { hotkey_ = h; }
+    void setTarget(HWND target) { target_ = target; }
     void setOnExit(std::function<void()> cb) { onExit_ = std::move(cb); }
     void setOnSessionLockChange(std::function<void(bool)> cb) { onSessionLock_ = std::move(cb); }
 
@@ -55,6 +58,7 @@ private:
     int debounceMs_ = 500;
 
     std::function<void(bool)> onCombatToggle_;
+    std::function<void(const AppConfig&)> onConfigChanged_;
     std::function<void()> onExit_;
     std::function<void(bool)> onSessionLock_;
 public:
@@ -63,6 +67,7 @@ private:
 
     TrayIcon* tray_ = nullptr;
     HotkeyManager* hotkey_ = nullptr;
+    HWND target_ = nullptr;
 
 public:
     struct DxState;

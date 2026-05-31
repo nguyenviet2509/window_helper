@@ -12,6 +12,7 @@
 
 #include <windows.h>
 #include <cstdio>
+#include <cwchar>
 
 static HWND FindGameWindow() {
     // Try common title variants.
@@ -66,10 +67,23 @@ int wmain() {
     PostMessageW(h, WM_RBUTTONUP, MK_SHIFT, lp);
     Sleep(10);
     PostMessageW(h, WM_KEYUP, VK_LSHIFT, 0);
+    Sleep(700);
+
+    // Test 4: WM_MOUSEMOVE sequence rồi right-click — verify path-then-click pattern.
+    std::fwprintf(stdout, L"[T4] Mouse-move trail (5 points) then right-click...\n");
+    const POINT trail[] = { {200,200}, {250,220}, {300,240}, {350,270}, {400,300} };
+    for (const auto& p : trail) {
+        PostMessageW(h, WM_MOUSEMOVE, 0, MAKELPARAM(p.x, p.y));
+        Sleep(20);
+    }
+    PostMessageW(h, WM_RBUTTONDOWN, MK_RBUTTON, lp);
+    Sleep(20);
+    PostMessageW(h, WM_RBUTTONUP, 0, lp);
 
     std::fwprintf(stdout, L"[DONE] Observe game. Record results:\n");
     std::fwprintf(stdout, L"       - T1 (F2 skill visible?) -> keys OK?\n");
     std::fwprintf(stdout, L"       - T2 (right-click took effect?) -> mouse OK?\n");
     std::fwprintf(stdout, L"       - T3 (attack-in-place triggered?) -> SHIFT mod OK?\n");
+    std::fwprintf(stdout, L"       - T4 (cursor moved + clicked?) -> WM_MOUSEMOVE OK?\n");
     return 0;
 }

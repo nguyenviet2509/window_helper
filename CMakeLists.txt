@@ -6,9 +6,13 @@ if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
         CACHE STRING "vcpkg toolchain")
 endif()
 
+# CMP0091: cho phép CMAKE_MSVC_RUNTIME_LIBRARY điều khiển /MT vs /MD
+# (cần thiết khi build portable preset với x64-windows-static).
+cmake_policy(SET CMP0091 NEW)
+
 project(pt-automation LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

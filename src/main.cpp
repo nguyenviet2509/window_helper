@@ -9,16 +9,19 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <chrono>
 
 #include "capture/wgc-capture.h"
 #include "vision/vision-pipeline.h"
 #include "input/postmessage-backend.h"
+#include "input/send-input-backend.h"
 #include "input/input-scheduler.h"
 #include "core/humanizer.h"
 #include "core/output-gate.h"
 #include "core/capture-health-fsm.h"
 #include "core/logger.h"
 #include "combat/combat-fsm.h"
+#include "combat/pot-refill-scheduler.h"
 #include "dispatch/action-dispatcher.h"
 #include "config/config-loader.h"
 #include "config/config-bus.h"
@@ -68,10 +71,16 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     Logger::instance().open("logs/WindowHelper.log");
     LOG_INFO("WindowHelper starting");
 
-    // Config.
+    // Config — resolve cạnh .exe để tránh phụ thuộc CWD lúc launch
+    // (shortcut Desktop vs double-click khác CWD sẽ đọc/ghi nhầm file).
+    auto exeDir = []() -> std::filesystem::path {
+        wchar_t buf[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, buf, MAX_PATH);
+        return std::filesystem::path(buf).parent_path();
+    };
     AppConfig cfg;
     ConfigLoader loader;
-    const std::string configPath = "config.json";
+    const std::string configPath = (exeDir() / "config.json").string();
     if (loader.load(configPath, cfg)) {
         LOG_INFO("Loaded config.json");
     } else {
@@ -84,15 +93,16 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     // Target game window (mock during dev).
     HWND target = FindTarget();
     if (!target) {
-        MessageBoxW(nullptr, L"No target window found (run PtMockGame first).",
+        MessageBoxW(nullptr, L"Không tìm thấy cửa sổ game (mở PtMockGame hoặc Priston Tale trước).",
                     L"WindowHelper", MB_ICONERROR);
         Logger::instance().close();
         return 1;
     }
 
-    // Input + gate + scheduler.
-    PostMessageBackend backend;
+    // Input + gate + scheduler. PT tu choi PostMessage -> dung SendInput foreground.
+    SendInputBackend backend;
     backend.setTarget(target);
+    backend.setMousePathEnabled(cfg.combat.enableMousePath);
     OutputGate gate;
     CaptureHealthFsm health;
     gate.setTarget(target);
@@ -102,10 +112,13 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     InputScheduler sched(backend, human, gate);
     sched.start();
 
-    // Combat + dispatcher.
+    // Combat + dispatcher + refill.
     CombatFsm combat(sched, target, cfg.combat);
     combat.enable(cfg.combat.enabled);
+    PotRefillScheduler refill(sched, gate, target, cfg.refill);
+    refill.enable(cfg.refill.enabled);
     ActionDispatcher dispatcher(sched, combat, cfg);
+    dispatcher.setRefillScheduler(&refill);
     dispatcher.setLogger([](const char* tag, int prio, WORD vk) {
         Logger::instance().logf(LogLevel::Info, "[dispatch] %s prio=P%d vk=0x%02X",
                                 tag, prio, vk);
@@ -118,13 +131,26 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         sched.stop(); Logger::instance().close();
         return 2;
     }
-    auto hp = MakeBar(355, 475, 12, 105, { {0,10}, {170,180} });
-    auto sp = MakeBar(383, 475, 12, 105, { {20, 35} });
-    auto mp = MakeBar(411, 475, 12, 105, { {100,130} });
+    // WGC frame = 1010x789. HP do tu Paint screenshot.
+    auto hp = MakeBar(403, 656, 22, 121, { {0,10}, {170,180} });
+    auto sp = MakeBar(383, 675, 11, 102, { {40, 80} });  // top-left (383,675), bottom-right (394,777)
+    auto mp = MakeBar(586, 655, 21, 121, { {100,130} });  // top-left (586,655), bottom-right (607,776)
     VisionPipeline pipe(cap, hp, mp, sp);
+    // Cấp snapshot frame cho refill scheduler để probe slot HP rỗng -> teleport core.
+    refill.setFrameSnapshotter([&pipe](cv::Mat& out) { return pipe.snapshotLatest(out); });
+    // Log gia tri detector moi 1s (tam thoi de debug calibration).
+    std::atomic<uint64_t> lastLogMs{0};
     pipe.setCallback([&](const VisionState& s) {
         health.notifyFrameArrived(s.seq);
         dispatcher.onVisionTick(s);
+        auto nowMs = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (nowMs - lastLogMs.load() >= 1000) {
+            lastLogMs.store(nowMs);
+            Logger::instance().logf(LogLevel::Info,
+                "[vision] HP=%.2f MP=%.2f SP=%.2f valid=%d seq=%llu",
+                s.hpPct, s.mpPct, s.spPct, (int)s.valid, (unsigned long long)s.seq);
+        }
     });
     pipe.start();
 
@@ -150,6 +176,16 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         combat.enable(on);
         Logger::instance().logf(LogLevel::Info, "AUTO toggled -> %s", on ? "ON" : "OFF");
     });
+    // Hot-reload các config sub-section sau khi UI flush (debounced).
+    win.setOnConfigChanged([&](const AppConfig& c) {
+        dispatcher.updateConfig(c);
+        refill.enable(c.refill.enabled);
+        backend.setMousePathEnabled(c.combat.enableMousePath);
+        Logger::instance().logf(LogLevel::Info,
+            "[config] hot-reload refill.enabled=%d intervalSec hp=%d sp=%d mp=%d",
+            (int)c.refill.enabled,
+            c.refill.hp.intervalSec, c.refill.sp.intervalSec, c.refill.mp.intervalSec);
+    });
     win.setOnSessionLockChange([&](bool locked) {
         gate.setSessionLocked(locked);
         LOG_INFO(locked ? "Session locked — input blocked"
@@ -166,6 +202,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     });
     tray.setOnExit([&] { PostMessageW(win.hwnd(), WM_DESTROY, 0, 0); });
     win.attachTray(&tray);
+    win.setTarget(target);
 
     // Global hotkey F8 -> toggle AUTO.
     HotkeyManager hk;

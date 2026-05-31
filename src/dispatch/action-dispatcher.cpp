@@ -1,4 +1,5 @@
 #include "action-dispatcher.h"
+#include "../combat/pot-refill-scheduler.h"
 
 ActionDispatcher::ActionDispatcher(InputScheduler& s, CombatFsm& c, const AppConfig& cfg)
     : sched_(s), combat_(c), pots_(cfg.pot), cfg_(cfg) {}
@@ -7,6 +8,13 @@ void ActionDispatcher::updateConfig(const AppConfig& cfg) {
     cfg_ = cfg;
     pots_.updateConfig(cfg.pot);
     combat_.updateConfig(cfg.combat);
+    if (refill_) refill_->updateConfig(cfg.refill);
+}
+
+void ActionDispatcher::setRefillScheduler(PotRefillScheduler* r) {
+    refill_ = r;
+    pots_.setRefillScheduler(r);
+    combat_.setRefillScheduler(r);
 }
 
 bool ActionDispatcher::schedulePot(const PotAction& a) {
@@ -24,6 +32,9 @@ bool ActionDispatcher::schedulePot(const PotAction& a) {
 void ActionDispatcher::onVisionTick(const VisionState& v) {
     if (!v.valid) return;
     auto now = std::chrono::steady_clock::now();
+
+    // Refill chạy trước. Khi refill busy, pot/combat tự skip qua setRefillScheduler hook.
+    if (refill_) refill_->tick(v, now);
 
     // P0 HP emergency.
     if (auto a = pots_.evalHp(v, now))     { schedulePot(*a); return; }

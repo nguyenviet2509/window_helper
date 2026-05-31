@@ -15,6 +15,10 @@
 
 struct InputCmd {
     int priority = 4;
+    // Khi true, scheduler bỏ qua flag refillActive của OutputGate.
+    // Dùng cho PotRefillScheduler để các cmd của chính nó (mở/đóng kho, Shift+N, restore cursor)
+    // không bị self-block bởi flag mà nó set.
+    bool bypassRefillGate = false;
     std::chrono::steady_clock::time_point fireAt{};
     std::function<void(IInputBackend&)> action;
     uint64_t seq = 0;

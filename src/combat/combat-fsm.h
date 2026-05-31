@@ -8,6 +8,7 @@
 #include <windows.h>
 
 #include "../state/game-state.h"
+#include "../dispatch/priority.h"
 #include "../input/input-scheduler.h"
 #include "buff-sequencer.h"
 #include "attack-sweep.h"
@@ -15,6 +16,8 @@
 #include "../vision/roi.h"
 
 enum class CombatState { Idle, Buffing, Arming, Attacking };
+
+class PotRefillScheduler;   // fwd decl: skip combat khi refill đang chạy
 
 class CombatFsm {
 public:
@@ -26,6 +29,7 @@ public:
     void tick(const VisionState& v, std::chrono::steady_clock::time_point now);
 
     void updateConfig(const CombatConfig& cfg);
+    void setRefillScheduler(const PotRefillScheduler* r) { refill_ = r; }
 
     CombatState state() const { return state_; }
 
@@ -52,5 +56,7 @@ private:
     std::chrono::steady_clock::time_point cycleStart_{};
     std::chrono::steady_clock::time_point lastPickAt_{};
     std::chrono::steady_clock::time_point lastAttackAt_{};
+    std::chrono::steady_clock::time_point engagementUntil_{};  // im lặng cho đến điểm này
     int buffsDeliveredThisRound_ = 0;
+    const PotRefillScheduler* refill_ = nullptr;
 };

@@ -1,0 +1,68 @@
+{
+  "combat": {
+    "attackCooldownMs": 350,
+    "attackRadiusMax": 180,
+    "attackRadiusMin": 60,
+    "buffs": [
+      {
+        "castDelayMs": 600,
+        "enabled": true,
+        "key": 113,
+        "rightClickAfter": true
+      },
+      {
+        "castDelayMs": 600,
+        "enabled": true,
+        "key": 114,
+        "rightClickAfter": true
+      },
+      {
+        "castDelayMs": 600,
+        "enabled": true,
+        "key": 115,
+        "rightClickAfter": true
+      },
+      {
+        "castDelayMs": 600,
+        "enabled": true,
+        "key": 116,
+        "rightClickAfter": true
+      }
+    ],
+    "cycleDurationSec": 300,
+    "enabled": true,
+    "mainAttackKey": 112,
+    "repickMaxDwellMs": 15000,
+    "repickMinDwellMs": 2000,
+    "waitMpGate": true,
+    "waitMpGateThreshold": 0.15
+  },
+  "pot": {
+    "confirmFrames": 2,
+    "cooldownMs": 600,
+    "holdMs": 60,
+    "hpKey": 49,
+    "hpRecallStableMs": 3000,
+    "hpRecallThreshold": 0.18,
+    "hpThreshold": 0.699999988079071,
+    "mpKey": 51,
+    "mpThreshold": 0.4,
+    "recallKey": 123,
+    "spKey": 50,
+    "spThreshold": 0.4
+  },
+  "refill": {
+    "enabled": false,
+    "inventoryToggleKey": 86,
+    "inventoryOpenDelayMs": 400,
+    "inventoryCloseDelayMs": 200,
+    "mouseMoveDelayMs": 150,
+    "postHotkeyDelayMs": 200,
+    "refillTimeoutMs": 10000,
+    "hpCriticalAbortThreshold": 0.30,
+    "abortBackoffMs": 30000,
+    "hp": { "intervalSec": 0 },
+    "sp": { "intervalSec": 0 },
+    "mp": { "intervalSec": 0 }
+  }
+}

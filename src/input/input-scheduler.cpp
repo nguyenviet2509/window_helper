@@ -1,4 +1,5 @@
 #include "input-scheduler.h"
+#include "../core/logger.h"
 
 using clk = std::chrono::steady_clock;
 
@@ -50,18 +51,34 @@ void InputScheduler::runLoop() {
         lk.unlock();
 
         // Drop non-critical commands during break / session pause.
-        if (cmd.priority > 2) {
+        if (cmd.priority > 2 && !cmd.bypassRefillGate) {
             if (human_.inBreakWindow() || human_.inSessionPause()) {
                 gatedDrops_.fetch_add(1);
                 continue;
             }
         }
 
-        if (!gate_.allowInput()) {
+        // Refill pause: drop mọi cmd bình thường khi gate.refillActive(),
+        // cho phép cmd của PotRefillScheduler (bypassRefillGate=true) đi qua.
+        if (gate_.refillActive() && !cmd.bypassRefillGate) {
             gatedDrops_.fetch_add(1);
+            Logger::instance().logf(LogLevel::Debug,
+                "[scheduler] DROPPED prio=P%d seq=%llu (refill active)",
+                cmd.priority, (unsigned long long)cmd.seq);
             continue;
         }
 
+        if (!gate_.allowInput()) {
+            gatedDrops_.fetch_add(1);
+            Logger::instance().logf(LogLevel::Info,
+                "[scheduler] DROPPED prio=P%d seq=%llu (gate denied)",
+                cmd.priority, (unsigned long long)cmd.seq);
+            continue;
+        }
+
+        Logger::instance().logf(LogLevel::Info,
+            "[scheduler] FIRING prio=P%d seq=%llu",
+            cmd.priority, (unsigned long long)cmd.seq);
         if (cmd.action) cmd.action(backend_);
         fired_.fetch_add(1);
         human_.notifyActionFired(cmd.priority);

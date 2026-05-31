@@ -13,6 +13,8 @@ struct PotAction {
     const char* tag;
 };
 
+class PotRefillScheduler;   // fwd decl: skip eval khi refill đang chạy
+
 class PotEvaluator {
 public:
     explicit PotEvaluator(const PotConfig& cfg) : cfg_(cfg) {}
@@ -22,6 +24,7 @@ public:
     std::optional<PotAction> evalRecall(const VisionState& v, std::chrono::steady_clock::time_point now);
 
     void updateConfig(const PotConfig& cfg) { cfg_ = cfg; }
+    void setRefillScheduler(const PotRefillScheduler* r) { refill_ = r; }
 
 private:
     PotConfig cfg_;
@@ -30,4 +33,8 @@ private:
     TP lastHp_{}, lastMp_{}, lastSp_{}, lastRecall_{};
     TP hpBelowRecallSince_{};
     bool hpBelowRecallTracking_ = false;
+    // Chẩn đoán HP — throttle log mỗi ~1s + nhớ trạng thái valid trước đó.
+    TP lastHpDiagLog_{};
+    bool prevValid_ = true;
+    const PotRefillScheduler* refill_ = nullptr;
 };

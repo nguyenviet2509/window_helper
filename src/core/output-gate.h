@@ -11,6 +11,9 @@ public:
     void setHealth(const CaptureHealthFsm* fsm)  { fsm_ = fsm; }
     void setRequireForeground(bool v)            { reqFg_ = v; }
     void setSessionLocked(bool v)                { sessionLocked_.store(v); }
+    // Refill pause: khi true, scheduler drop mọi cmd KHÔNG có bypassRefillGate.
+    void setRefillActive(bool v)                 { refillActive_.store(v); }
+    bool refillActive() const noexcept           { return refillActive_.load(); }
 
     bool allowInput() const noexcept;
 
@@ -19,4 +22,5 @@ private:
     const CaptureHealthFsm* fsm_ = nullptr;
     bool reqFg_ = false;
     std::atomic<bool> sessionLocked_{ false };
+    std::atomic<bool> refillActive_{ false };
 };

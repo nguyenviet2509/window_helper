@@ -1,4 +1,7 @@
 #include "combat-fsm.h"
+#include "pot-refill-scheduler.h"
+
+#include <cstdlib>
 
 using ms = std::chrono::milliseconds;
 using sec = std::chrono::seconds;
@@ -104,12 +107,15 @@ void CombatFsm::stepAttacking(const VisionState& v, std::chrono::steady_clock::t
     bool minDwellOk = dwell >= ms(cfg_.repickMinDwellMs);
     bool forceRepick = dwell >= ms(cfg_.repickMaxDwellMs);
     bool mobDead = minDwellOk && activity_.mobLikelyDead();
+    bool firstClick = lastPickAt_.time_since_epoch().count() == 0;
 
-    bool needRepick = forceRepick || mobDead || (lastPickAt_.time_since_epoch().count() == 0);
-    if (!needRepick) {
-        // Continue hitting same spot at cooldown.
-        if ((now - lastAttackAt_) < ms(cfg_.attackCooldownMs)) return;
-    }
+    // Engagement lock: sau shift+right-click, game tự auto-chain attack mob đó.
+    // Im lặng cho đến khi mob chết, hết lock window, hoặc chạm maxDwell.
+    bool inLock = now < engagementUntil_;
+    if (inLock && !mobDead && !forceRepick && !firstClick) return;
+
+    // Hard floor giữa 2 repick click liên tiếp (anti-burst).
+    if (!firstClick && (now - lastAttackAt_) < ms(cfg_.attackCooldownMs)) return;
 
     auto [x, y] = sweep_.pickAttackPosition(target_);
     InputCmd c;
@@ -118,15 +124,19 @@ void CombatFsm::stepAttacking(const VisionState& v, std::chrono::steady_clock::t
     c.action = [x, y](IInputBackend& b) { b.sendShiftRightClick(x, y); };
     sched_.schedule(std::move(c));
 
-    if (needRepick) {
-        lastPickAt_ = now;
-        activity_.reset();
-    }
+    lastPickAt_ = now;
     lastAttackAt_ = now;
+    activity_.reset();
+
+    int jitter = cfg_.engagementLockJitterMs > 0
+        ? (std::rand() % (cfg_.engagementLockJitterMs + 1))
+        : 0;
+    engagementUntil_ = now + ms(cfg_.engagementLockMs + jitter);
 }
 
 void CombatFsm::tick(const VisionState& v, std::chrono::steady_clock::time_point now) {
     if (!enabled_) return;
+    if (refill_ && refill_->busy()) return;   // pause combat khi refill đang chạy
 
     switch (state_) {
     case CombatState::Idle:
