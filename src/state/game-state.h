@@ -26,29 +26,35 @@ struct PotConfig {
 struct BuffSlotCfg {
     bool enabled = true;
     WORD key = VK_F2;
-    int castDelayMs = 500;
+    int rightClickDelayMs = 100;  // F press -> right-click confirm self-target
+    int animationMs = 800;        // full cast animation of skill
+    int postBuffGapMs = 150;      // safety gap before next slot
     bool rightClickAfter = true;
+    int rebuffIntervalSec = 300;  // re-cast slot này sau N giây (per-slot duration)
 };
 
 struct CombatConfig {
     bool enabled = false;
     WORD mainAttackKey = VK_F1;   // arming key
-    int cycleDurationSec = 300;   // re-buff after this many seconds
-    int repickMinDwellMs = 2000;  // hold attack at least this long before repicking
-    int repickMaxDwellMs = 15000; // forced repick after this long
-    int attackRadiusMin = 60;
-    int attackRadiusMax = 180;
+    int repickMinDwellMs = 1000;  // hold attack at least this long before repicking
+    int repickMaxDwellMs = 8000;  // forced repick after this long
+    int attackRadiusMin = 50;
+    int attackRadiusMax = 140;
     bool waitMpGate = true;
     double waitMpGateThreshold = 0.15;
     int attackCooldownMs = 350;
-    int engagementLockMs = 5000;          // silence sau shift+right-click; bỏ qua click trong window này
-    int engagementLockJitterMs = 500;     // uniform [0, jitter] ms cộng thêm mỗi engagement (anti-pattern)
+    int engagementLockMs = 2500;          // silence sau shift+right-click; bỏ qua click trong window này
+    int engagementLockJitterMs = 800;     // uniform [0, jitter] ms cộng thêm mỗi engagement (anti-pattern)
     bool enableMousePath = true;          // Bezier mouse path trước mỗi click (anti-detect)
+    // Safe spot cho right-click confirm self-target (% của client rect).
+    // Pick chỗ KHÔNG có mob và KHÔNG có UI. Nếu click trúng mob -> game biến skill thành đánh thường.
+    double buffSafeSpotXPct = 0.5;
+    double buffSafeSpotYPct = 0.5;
     std::vector<BuffSlotCfg> buffs = {
-        {true, VK_F2, 600, true},
-        {true, VK_F3, 600, true},
-        {true, VK_F4, 600, true},
-        {true, VK_F5, 600, true},
+        {true, VK_F2, 100, 800, 150, true, 300},
+        {true, VK_F3, 100, 800, 150, true, 300},
+        {true, VK_F4, 100, 800, 150, true, 300},
+        {true, VK_F5, 100, 800, 150, true, 300},
     };
 };
 

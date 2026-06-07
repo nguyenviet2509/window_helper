@@ -6,7 +6,6 @@
 #include <chrono>
 #include <functional>
 #include <windows.h>
-#include <opencv2/core.hpp>
 
 #include "../state/game-state.h"
 #include "../input/input-scheduler.h"
@@ -15,13 +14,8 @@
 
 class PotRefillScheduler {
 public:
-    // FrameSnapshotter: cấp frame BGRA mới nhất để probe pixel slot kho. Optional.
-    using FrameSnapshotter = std::function<bool(cv::Mat&)>;
-
     PotRefillScheduler(InputScheduler& sched, OutputGate& gate, HWND target,
                        const PotRefillConfig& cfg);
-
-    void setFrameSnapshotter(FrameSnapshotter fn) { snapshot_ = std::move(fn); }
 
     void enable(bool on) { enabled_ = on; }
     bool enabled() const { return enabled_; }
@@ -46,8 +40,6 @@ private:
         Cleanup,        // restore cursor, clear gate flag
         AbortCloseInv,  // abort: tap V đóng kho
         AbortCleanup,   // abort: restore cursor, set backoff
-        CoreMove,       // HP pot hết: move chuột tới core (tp về làng)
-        CoreClick,      // right-click core
     };
     enum class Slot { None, Hp, Sp, Mp };
 
@@ -80,6 +72,4 @@ private:
     TP abortBackoffUntil_{};
     POINT savedCursorScreen_{0, 0};
     bool slotsPlanned_[3] = { false, false, false };   // [Hp=0, Sp=1, Mp=2]
-    bool corePending_ = false;        // HP slot rỗng -> trigger core teleport sau khi đóng kho
-    FrameSnapshotter snapshot_;       // optional pixel probe source
 };

@@ -20,13 +20,6 @@ void VisionPipeline::stop() {
     if (th_.joinable()) th_.join();
 }
 
-bool VisionPipeline::snapshotLatest(cv::Mat& out) {
-    std::lock_guard<std::mutex> g(frameMu_);
-    if (latestBgra_.empty()) return false;
-    out = latestBgra_.clone();
-    return true;
-}
-
 void VisionPipeline::runLoop() {
     using clock = std::chrono::steady_clock;
     const auto period = std::chrono::milliseconds(50);          // 20 Hz target
@@ -53,9 +46,6 @@ void VisionPipeline::runLoop() {
             s.spPct = spEma_.update(spRaw);
             s.valid = true;
             s.seq = f.seq;
-
-            // Publish latest frame for ad-hoc samplers (e.g. inventory pot-empty probe).
-            { std::lock_guard<std::mutex> g(frameMu_); latestBgra_ = f.bgra.clone(); }
 
             std::function<void(const VisionState&)> cb;
             { std::lock_guard<std::mutex> g(cbMu_); cb = cb_; }

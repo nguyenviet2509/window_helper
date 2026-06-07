@@ -8,16 +8,39 @@ static void toJson(json& j, const BuffSlotCfg& b) {
     j = json{
         {"enabled", b.enabled},
         {"key", static_cast<int>(b.key)},
-        {"castDelayMs", b.castDelayMs},
+        {"rightClickDelayMs", b.rightClickDelayMs},
+        {"animationMs", b.animationMs},
+        {"postBuffGapMs", b.postBuffGapMs},
         {"rightClickAfter", b.rightClickAfter},
+        {"rebuffIntervalSec", b.rebuffIntervalSec},
     };
 }
 
-static void fromJson(const json& j, BuffSlotCfg& b) {
+// legacyCycleSec: nếu JSON cũ có top-level cycleDurationSec → dùng làm default cho slot
+// thiếu rebuffIntervalSec. 0 = không có legacy → giữ default struct (300).
+static void fromJson(const json& j, BuffSlotCfg& b, int legacyCycleSec) {
     if (j.contains("enabled"))         b.enabled = j["enabled"];
     if (j.contains("key"))             b.key = static_cast<WORD>(j["key"].get<int>());
-    if (j.contains("castDelayMs"))     b.castDelayMs = j["castDelayMs"];
     if (j.contains("rightClickAfter")) b.rightClickAfter = j["rightClickAfter"];
+
+    // New schema (preferred).
+    if (j.contains("animationMs")) {
+        b.animationMs = j["animationMs"];
+        b.rightClickDelayMs = j.value("rightClickDelayMs", 100);
+        b.postBuffGapMs = j.value("postBuffGapMs", 150);
+    } else if (j.contains("castDelayMs")) {
+        // Migration: legacy castDelayMs -> animationMs, sane defaults for rest.
+        b.animationMs = j["castDelayMs"];
+        b.rightClickDelayMs = 100;
+        b.postBuffGapMs = 150;
+    }
+
+    // Per-slot rebuff interval. Migration: nếu thiếu, fallback về legacy global cycle.
+    if (j.contains("rebuffIntervalSec")) {
+        b.rebuffIntervalSec = j["rebuffIntervalSec"];
+    } else if (legacyCycleSec > 0) {
+        b.rebuffIntervalSec = legacyCycleSec;
+    }
 }
 
 static void toJson(json& j, const PotConfig& p) {
@@ -53,7 +76,6 @@ static void toJson(json& j, const CombatConfig& c) {
     j = json{
         {"enabled", c.enabled},
         {"mainAttackKey", (int)c.mainAttackKey},
-        {"cycleDurationSec", c.cycleDurationSec},
         {"repickMinDwellMs", c.repickMinDwellMs},
         {"repickMaxDwellMs", c.repickMaxDwellMs},
         {"attackRadiusMin", c.attackRadiusMin},
@@ -64,6 +86,8 @@ static void toJson(json& j, const CombatConfig& c) {
         {"engagementLockMs", c.engagementLockMs},
         {"engagementLockJitterMs", c.engagementLockJitterMs},
         {"enableMousePath", c.enableMousePath},
+        {"buffSafeSpotXPct", c.buffSafeSpotXPct},
+        {"buffSafeSpotYPct", c.buffSafeSpotYPct},
         {"buffs", buffs},
     };
 }
@@ -71,7 +95,8 @@ static void toJson(json& j, const CombatConfig& c) {
 static void fromJson(const json& j, CombatConfig& c) {
     if (j.contains("enabled")) c.enabled = j["enabled"];
     if (j.contains("mainAttackKey")) c.mainAttackKey = (WORD)j["mainAttackKey"].get<int>();
-    if (j.contains("cycleDurationSec")) c.cycleDurationSec = j["cycleDurationSec"];
+    // Legacy global cycle: dùng làm fallback cho slot thiếu rebuffIntervalSec.
+    int legacyCycleSec = j.value("cycleDurationSec", 0);
     if (j.contains("repickMinDwellMs")) c.repickMinDwellMs = j["repickMinDwellMs"];
     if (j.contains("repickMaxDwellMs")) c.repickMaxDwellMs = j["repickMaxDwellMs"];
     if (j.contains("attackRadiusMin")) c.attackRadiusMin = j["attackRadiusMin"];
@@ -82,11 +107,13 @@ static void fromJson(const json& j, CombatConfig& c) {
     if (j.contains("engagementLockMs")) c.engagementLockMs = j["engagementLockMs"];
     if (j.contains("engagementLockJitterMs")) c.engagementLockJitterMs = j["engagementLockJitterMs"];
     if (j.contains("enableMousePath")) c.enableMousePath = j["enableMousePath"];
+    if (j.contains("buffSafeSpotXPct")) c.buffSafeSpotXPct = j["buffSafeSpotXPct"];
+    if (j.contains("buffSafeSpotYPct")) c.buffSafeSpotYPct = j["buffSafeSpotYPct"];
     if (j.contains("buffs") && j["buffs"].is_array()) {
         c.buffs.clear();
         for (const auto& bj : j["buffs"]) {
             BuffSlotCfg b;
-            fromJson(bj, b);
+            fromJson(bj, b, legacyCycleSec);
             c.buffs.push_back(b);
         }
     }

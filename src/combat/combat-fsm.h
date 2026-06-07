@@ -7,10 +7,11 @@
 #include <optional>
 #include <windows.h>
 
+#include <vector>
+
 #include "../state/game-state.h"
 #include "../dispatch/priority.h"
 #include "../input/input-scheduler.h"
-#include "buff-sequencer.h"
 #include "attack-sweep.h"
 #include "combat-activity-monitor.h"
 #include "../vision/roi.h"
@@ -41,6 +42,11 @@ private:
     void stepBuffing(std::chrono::steady_clock::time_point now);
     void stepAttacking(const VisionState& v, std::chrono::steady_clock::time_point now);
 
+    // Trả index slot enabled đầu tiên đang due (now - lastCastAt_[i] >= interval).
+    // -1 nếu không slot nào due.
+    int findDueSlot(std::chrono::steady_clock::time_point now) const;
+    void syncLastCastSize();   // resize lastCastAt_ khớp cfg_.buffs.size().
+
     InputScheduler& sched_;
     HWND target_;
     CombatConfig cfg_;
@@ -48,15 +54,14 @@ private:
     bool enabled_ = false;
     CombatState state_ = CombatState::Idle;
 
-    BuffSequencer buffs_;
     AttackSweep sweep_;
     CombatActivityMonitor activity_;
 
     std::chrono::steady_clock::time_point nextStepAt_{};
-    std::chrono::steady_clock::time_point cycleStart_{};
     std::chrono::steady_clock::time_point lastPickAt_{};
     std::chrono::steady_clock::time_point lastAttackAt_{};
     std::chrono::steady_clock::time_point engagementUntil_{};  // im lặng cho đến điểm này
-    int buffsDeliveredThisRound_ = 0;
+    // Per-slot last cast timestamp; epoch zero = chưa cast lần nào → due ngay.
+    std::vector<std::chrono::steady_clock::time_point> lastCastAt_;
     const PotRefillScheduler* refill_ = nullptr;
 };

@@ -2,8 +2,6 @@
 #include "../core/logger.h"
 #include "../dispatch/priority.h"
 
-#include <opencv2/imgproc.hpp>
-
 using ms = std::chrono::milliseconds;
 using sec = std::chrono::seconds;
 
@@ -15,10 +13,6 @@ struct Bbox { int l, t, r, b; };
 constexpr Bbox HP_BBOX{268, 462, 290, 484};
 constexpr Bbox SP_BBOX{268, 484, 291, 501};
 constexpr Bbox MP_BBOX{268, 506, 290, 528};
-// Tọa độ slot CORE (cuộn tp về làng) trên thanh hotbar dưới — window-relative (Paint).
-constexpr Bbox CORE_BBOX{310, 717, 362, 744};
-constexpr int CORE_CX = (CORE_BBOX.l + CORE_BBOX.r) / 2;
-constexpr int CORE_CY = (CORE_BBOX.t + CORE_BBOX.b) / 2;
 constexpr int HP_CX = (HP_BBOX.l + HP_BBOX.r) / 2;
 constexpr int HP_CY = (HP_BBOX.t + HP_BBOX.b) / 2;
 constexpr int SP_CX = (SP_BBOX.l + SP_BBOX.r) / 2;
@@ -36,9 +30,9 @@ constexpr int PAINT_REF_H = 630;
 // client-relative (cái mà backend.sendMouseMove dùng qua ClientToScreen).
 // Trừ đi offset của title bar + border trên/trái.
 void windowToClient(HWND h, int wxRef, int wyRef, int& cx, int& cy) {
-    RECT wr{}, cr{};
+    RECT wr{};
     POINT clientTL{0, 0};
-    if (!h || !GetWindowRect(h, &wr) || !ClientToScreen(h, &clientTL) || !GetClientRect(h, &cr)) {
+    if (!h || !GetWindowRect(h, &wr) || !ClientToScreen(h, &clientTL)) {
         cx = wxRef; cy = wyRef;
         return;
     }
@@ -58,35 +52,6 @@ void windowToClient(HWND h, int wxRef, int wyRef, int& cx, int& cy) {
         "input ref=(%d,%d) phys=(%d,%d) offset=(%d,%d) -> client=(%d,%d)",
         winW, winH, PAINT_REF_W, PAINT_REF_H, sx, sy,
         wxRef, wyRef, wxPhys, wyPhys, dx, dy, cx, cy);
-}
-
-// Sample 1 vùng ROI nhỏ trong frame và quyết định slot rỗng:
-//   - Đổi BGRA -> HSV.
-//   - Slot rỗng có background xám tối: saturation rất thấp + value thấp.
-//   - Slot chứa pot có icon bão hòa cao (đỏ/xanh) -> meanSat lớn.
-// Threshold dựa trên quan sát PT: empty avgSat thường <15, có pot >40.
-bool sampleSlotEmpty(const cv::Mat& bgra, int cxClient, int cyClient) {
-    if (bgra.empty()) return false;
-    // ROI 10x10 quanh center (tránh số stack ở góc trên-phải slot).
-    const int half = 5;
-    int x0 = std::max(0, cxClient - half);
-    int y0 = std::max(0, cyClient - half);
-    int x1 = std::min(bgra.cols - 1, cxClient + half);
-    int y1 = std::min(bgra.rows - 1, cyClient + half);
-    if (x1 <= x0 || y1 <= y0) return false;
-    cv::Rect roi(x0, y0, x1 - x0, y1 - y0);
-    cv::Mat patch = bgra(roi);
-    cv::Mat bgr, hsv;
-    cv::cvtColor(patch, bgr, cv::COLOR_BGRA2BGR);
-    cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
-    cv::Scalar meanHsv = cv::mean(hsv);
-    double avgSat = meanHsv[1];
-    double avgVal = meanHsv[2];
-    bool empty = (avgSat < 25.0) && (avgVal < 90.0);
-    Logger::instance().logf(LogLevel::Info,
-        "[refill.probe] slot center=(%d,%d) avgSat=%.1f avgVal=%.1f -> %s",
-        cxClient, cyClient, avgSat, avgVal, empty ? "EMPTY" : "HAS_POT");
-    return empty;
 }
 }   // namespace
 
@@ -167,8 +132,6 @@ const char* PotRefillScheduler::stateName() const {
         case State::Cleanup:        return "CLEANUP";
         case State::AbortCloseInv:  return "ABORT_CLOSE";
         case State::AbortCleanup:   return "ABORT_CLEANUP";
-        case State::CoreMove:       return "CORE_MOVE";
-        case State::CoreClick:      return "CORE_CLICK";
     }
     return "?";
 }
@@ -249,7 +212,6 @@ void PotRefillScheduler::doCleanup(TP now, bool aborted) {
     state_ = State::Idle;
     currentSlot_ = Slot::None;
     slotsPlanned_[0] = slotsPlanned_[1] = slotsPlanned_[2] = false;
-    corePending_ = false;
 
     auto elapsedMs = std::chrono::duration_cast<ms>(now - refillStartedAt_).count();
     if (aborted) {
@@ -303,31 +265,7 @@ void PotRefillScheduler::tick(const VisionState& v, TP now) {
     switch (state_) {
         case State::OpenInv: {
             // Pick first due slot.
-            Slot picked = pickNextSlot();
-            // HP-only: probe slot pixels; nếu rỗng -> teleport core NGAY (kho phải còn mở
-            // mới click được core). Skip luôn MP/SP vì teleport đổi scene.
-            if (picked == Slot::Hp && snapshot_) {
-                int pcx, pcy;
-                windowToClient(target_, HP_CX, HP_CY, pcx, pcy);
-                cv::Mat frame;
-                if (snapshot_(frame) && sampleSlotEmpty(frame, pcx, pcy)) {
-                    Logger::instance().log(LogLevel::Warn,
-                        "[refill] HP slot EMPTY -> core teleport (kho vẫn mở)");
-                    corePending_ = true;
-                    lastHpAt_ = now;
-                    slotsPlanned_[0] = slotsPlanned_[1] = slotsPlanned_[2] = false;
-                    int cx, cy;
-                    windowToClient(target_, CORE_CX, CORE_CY, cx, cy);
-                    scheduleStep(P0_HpEmergency, now,
-                        [cx, cy](IInputBackend& b) { b.sendMouseMove(cx, cy); });
-                    state_ = State::CoreMove;
-                    nextStepAt_ = now + ms(cfg_.mouseMoveDelayMs);
-                    Logger::instance().logf(LogLevel::Warn,
-                        "[refill] CORE_MOVE client=(%d,%d)", cx, cy);
-                    break;
-                }
-            }
-            currentSlot_ = picked;
+            currentSlot_ = pickNextSlot();
             if (currentSlot_ == Slot::None) {
                 // No slots — close inventory.
                 WORD vk = cfg_.inventoryToggleKey;
@@ -413,26 +351,6 @@ void PotRefillScheduler::tick(const VisionState& v, TP now) {
         case State::CloseInv:
             doCleanup(now, /*aborted=*/false);
             break;
-        case State::CoreMove: {
-            int cx, cy;
-            windowToClient(target_, CORE_CX, CORE_CY, cx, cy);
-            scheduleStep(P0_HpEmergency, now,
-                [cx, cy](IInputBackend& b) { b.sendRightClick(cx, cy); });
-            state_ = State::CoreClick;
-            nextStepAt_ = now + ms(cfg_.postHotkeyDelayMs);
-            Logger::instance().log(LogLevel::Warn, "[refill] CORE_CLICK right-click (kho mở)");
-            break;
-        }
-        case State::CoreClick: {
-            // Đóng kho sau khi đã right-click core.
-            WORD vk = cfg_.inventoryToggleKey;
-            scheduleStep(P0_HpEmergency, now, [vk](IInputBackend& b) {
-                b.sendKeyTap(vk, 30);
-            });
-            state_ = State::CloseInv;
-            nextStepAt_ = now + ms(cfg_.inventoryCloseDelayMs);
-            break;
-        }
         case State::AbortCloseInv:
             state_ = State::AbortCleanup;
             nextStepAt_ = now;

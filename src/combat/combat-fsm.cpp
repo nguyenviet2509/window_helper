@@ -1,6 +1,7 @@
 #include "combat-fsm.h"
 #include "pot-refill-scheduler.h"
 
+#include <algorithm>
 #include <cstdlib>
 
 using ms = std::chrono::milliseconds;
@@ -8,29 +9,48 @@ using sec = std::chrono::seconds;
 
 CombatFsm::CombatFsm(InputScheduler& s, HWND target, const CombatConfig& cfg)
     : sched_(s), target_(target), cfg_(cfg),
-      buffs_(cfg.buffs),
-      sweep_(cfg.attackRadiusMin, cfg.attackRadiusMax) {}
+      sweep_(cfg.attackRadiusMin, cfg.attackRadiusMax) {
+    syncLastCastSize();
+}
+
+void CombatFsm::syncLastCastSize() {
+    // Preserve existing timestamps; new slots default = epoch zero (due ngay).
+    lastCastAt_.resize(cfg_.buffs.size(), std::chrono::steady_clock::time_point{});
+}
+
+bool buffsAnyEnabled(const std::vector<BuffSlotCfg>& v) {
+    for (const auto& b : v) if (b.enabled) return true;
+    return false;
+}
 
 void CombatFsm::enable(bool on) {
     enabled_ = on;
     if (!on) { state_ = CombatState::Idle; return; }
     auto now = std::chrono::steady_clock::now();
-    if (buffs_.empty()) enterArming(now);
+    if (!buffsAnyEnabled(cfg_.buffs)) enterArming(now);
     else enterBuffing(now);
 }
 
 void CombatFsm::updateConfig(const CombatConfig& cfg) {
     cfg_ = cfg;
-    buffs_.updateSlots(cfg.buffs);
+    syncLastCastSize();
     sweep_.setRange(cfg.attackRadiusMin, cfg.attackRadiusMax);
 }
 
 void CombatFsm::enterBuffing(std::chrono::steady_clock::time_point now) {
     state_ = CombatState::Buffing;
-    buffs_.reset();
     nextStepAt_ = now;
-    cycleStart_ = now;
-    buffsDeliveredThisRound_ = 0;
+}
+
+int CombatFsm::findDueSlot(std::chrono::steady_clock::time_point now) const {
+    for (size_t i = 0; i < cfg_.buffs.size() && i < lastCastAt_.size(); ++i) {
+        const auto& b = cfg_.buffs[i];
+        if (!b.enabled) continue;
+        if ((now - lastCastAt_[i]) >= sec(b.rebuffIntervalSec)) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
 }
 
 void CombatFsm::enterArming(std::chrono::steady_clock::time_point now) {
@@ -55,47 +75,50 @@ void CombatFsm::enterAttacking(std::chrono::steady_clock::time_point now) {
 void CombatFsm::stepBuffing(std::chrono::steady_clock::time_point now) {
     if (now < nextStepAt_) return;
 
-    auto slot = buffs_.nextBuff();
-    if (!slot) { enterArming(now); return; }
+    int idx = findDueSlot(now);
+    if (idx < 0) { enterArming(now); return; }
 
+    const BuffSlotCfg& slot = cfg_.buffs[idx];
     HWND target = target_;
-    WORD vk = slot->key;
+    WORD vk = slot.key;
     int hold = 30;
 
+    // 1. F key tap now.
     InputCmd keyCmd;
     keyCmd.priority = P4_Buff;
     keyCmd.fireAt = now;
     keyCmd.action = [vk, hold](IInputBackend& b) { b.sendKeyTap(vk, hold); };
     sched_.schedule(std::move(keyCmd));
 
-    if (slot->rightClickAfter) {
+    // 2. Right-click confirm self-target at safe spot (% client rect, clamped).
+    if (slot.rightClickAfter) {
         RECT r{}; GetClientRect(target, &r);
-        int cx = (r.right + r.left) / 2;
-        int cy = (r.bottom + r.top) / 2;
+        int w = r.right - r.left;
+        int h = r.bottom - r.top;
+        double px = std::clamp(cfg_.buffSafeSpotXPct, 0.05, 0.95);
+        double py = std::clamp(cfg_.buffSafeSpotYPct, 0.05, 0.95);
+        int cx = r.left + static_cast<int>(w * px);
+        int cy = r.top  + static_cast<int>(h * py);
         InputCmd clickCmd;
         clickCmd.priority = P4_Buff;
-        clickCmd.fireAt = now + ms(slot->castDelayMs / 2);
+        clickCmd.fireAt = now + ms(slot.rightClickDelayMs);
         clickCmd.action = [cx, cy](IInputBackend& b) { b.sendRightClick(cx, cy); };
         sched_.schedule(std::move(clickCmd));
     }
 
-    nextStepAt_ = now + ms(slot->castDelayMs);
-    ++buffsDeliveredThisRound_;
+    // Mark slot này đã cast; tính cooldown từ đây.
+    lastCastAt_[idx] = now;
 
-    int enabledCount = 0;
-    for (const auto& b : cfg_.buffs) if (b.enabled) ++enabledCount;
-    if (buffsDeliveredThisRound_ >= enabledCount) {
-        // Round complete -> arm after last buff finishes.
-        state_ = CombatState::Arming;
-        nextStepAt_ = now + ms(slot->castDelayMs + 200);
-    }
+    // 3. Wait full animation + safety gap trước khi xét slot due kế.
+    int totalMs = slot.animationMs + slot.postBuffGapMs;
+    nextStepAt_ = now + ms(totalMs);
 }
 
 void CombatFsm::stepAttacking(const VisionState& v, std::chrono::steady_clock::time_point now) {
     activity_.update(v.hpPct, v.mpPct);
 
-    // Re-buff cycle expiry.
-    if ((now - cycleStart_) >= sec(cfg_.cycleDurationSec)) {
+    // Re-buff khi bất kỳ slot enabled nào đã quá rebuffIntervalSec từ lần cast trước.
+    if (findDueSlot(now) >= 0) {
         enterBuffing(now);
         return;
     }

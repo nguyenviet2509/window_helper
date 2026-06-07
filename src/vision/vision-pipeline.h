@@ -36,10 +36,6 @@ public:
     void start();
     void stop();
 
-    // Ad-hoc snapshot frame mới nhất (BGRA). Trả false nếu chưa có frame.
-    // Deep-copy để caller dùng an toàn ngoài lock.
-    bool snapshotLatest(cv::Mat& out);
-
 private:
     void runLoop();
 
@@ -52,7 +48,4 @@ private:
     std::thread th_;
     std::atomic<bool> running_{false};
     std::mutex cbMu_;
-
-    std::mutex frameMu_;
-    cv::Mat latestBgra_;   // deep-owned snapshot for ad-hoc sampling (e.g. inventory probe)
 };

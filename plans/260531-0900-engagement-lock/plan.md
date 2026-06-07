@@ -2,6 +2,7 @@
 title: "Engagement Lock for shift+right-click attack"
 description: "Single click per engagement window (~5s + jitter); skip cooldown spam; repick only on mob-dead or maxDwell."
 status: implemented-pending-build-verify
+supersededBy: 260531-1753-vision-mob-targeting  # phase-04 thay timer bằng vision targetLocked; giữ timer làm fallback
 priority: P2
 effort: 1.5h
 branch: master

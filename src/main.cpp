@@ -136,8 +136,6 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     auto sp = MakeBar(383, 675, 11, 102, { {40, 80} });  // top-left (383,675), bottom-right (394,777)
     auto mp = MakeBar(586, 655, 21, 121, { {100,130} });  // top-left (586,655), bottom-right (607,776)
     VisionPipeline pipe(cap, hp, mp, sp);
-    // Cấp snapshot frame cho refill scheduler để probe slot HP rỗng -> teleport core.
-    refill.setFrameSnapshotter([&pipe](cv::Mat& out) { return pipe.snapshotLatest(out); });
     // Log gia tri detector moi 1s (tam thoi de debug calibration).
     std::atomic<uint64_t> lastLogMs{0};
     pipe.setCallback([&](const VisionState& s) {

@@ -6,6 +6,7 @@
 #include <tchar.h>
 #include <wtsapi32.h>
 #include <wrl/client.h>
+#include <climits>
 #include <cstring>
 #include <vector>
 #include <functional>
@@ -253,7 +254,6 @@ void MainWindow::drawSettingsPanel() {
     if (ImGui::CollapsingHeader("Đánh quái", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto& c = draft_.combat;
         bool any = false;
-        any |= ImGui::DragInt("Chu kỳ buff (giây)", &c.cycleDurationSec, 1, 30, 1800);
         any |= ImGui::DragInt("Chờ tối thiểu khi đổi mục tiêu (ms)", &c.repickMinDwellMs, 100, 500, 10000);
         any |= ImGui::DragInt("Chờ tối đa khi đổi mục tiêu (ms)", &c.repickMaxDwellMs, 100, 1000, 60000);
         any |= ImGui::DragInt("Khoá đánh sau shift+phải (ms)", &c.engagementLockMs, 100, 1000, 15000);
@@ -266,6 +266,22 @@ void MainWindow::drawSettingsPanel() {
         any |= ImGui::DragInt("Bán kính đánh (max)", &c.attackRadiusMax, 5, 20, 400);
         any |= ImGui::Checkbox("Chờ đủ MP mới buff", &c.waitMpGate);
         any |= percentInput("Ngưỡng MP để buff (%)", &c.waitMpGateThreshold, 100.0f);
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Safe spot chuột phải khi buff");
+        {
+            float sx = (float)(c.buffSafeSpotXPct * 100.0);
+            float sy = (float)(c.buffSafeSpotYPct * 100.0);
+            if (ImGui::SliderFloat("Safe spot X (%)", &sx, 5.0f, 95.0f, "%.0f%%")) {
+                c.buffSafeSpotXPct = sx / 100.0;
+                any = true;
+            }
+            if (ImGui::SliderFloat("Safe spot Y (%)", &sy, 5.0f, 95.0f, "%.0f%%")) {
+                c.buffSafeSpotYPct = sy / 100.0;
+                any = true;
+            }
+            ImGui::TextDisabled("Tọa độ chuột phải để confirm self-target.\nPick chỗ TRỐNG: không mob, không UI element.\nNếu trúng mob, skill sẽ biến thành đánh thường.");
+        }
         if (any) markDirty();
     }
 
@@ -321,11 +337,42 @@ void MainWindow::drawSettingsPanel() {
                 b.key = static_cast<WORD>(0x70 + fnIdx);
                 any = true;
             }
-            any |= ImGui::DragInt("Delay sau cast (ms)", &b.castDelayMs, 50, 100, 5000);
+            any |= ImGui::DragInt("Animation cast (ms)", &b.animationMs, 10, 200, 3000);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Thời gian animation cast skill. Phải >= animation thực để không bị cancel.");
+            any |= ImGui::DragInt("Delay chuột phải (ms)", &b.rightClickDelayMs, 5, 0, 500);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Delay từ bấm F đến right-click. Chờ game đổi cursor self-target.");
+            any |= ImGui::DragInt("Gap sang buff sau (ms)", &b.postBuffGapMs, 5, 0, 1000);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Khoảng đệm an toàn trước khi bấm buff kế tiếp.");
+            any |= ImGui::DragInt("Chu kỳ rebuff (giây)", &b.rebuffIntervalSec, 5, 10, 7200);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Cast lại buff này sau N giây. Đặt theo duration thực của buff in-game.\n"
+                "Quá thấp (< 60s) sẽ liên tục ngắt đánh quái.");
+            if (b.enabled && b.rebuffIntervalSec < 60) {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f),
+                    "Canh bao: chu ky < 60s se ngat danh lien tuc.");
+            }
             any |= ImGui::Checkbox("Chuột phải sau buff", &b.rightClickAfter);
             ImGui::Separator();
             ImGui::PopID();
             if (any) markDirty();
+        }
+
+        // Cảnh báo nếu tổng thời gian 1 vòng buff vượt rebuff interval ngắn nhất.
+        int totalBuffMs = 0;
+        int minIntervalMs = INT_MAX;
+        for (const auto& b : draft_.combat.buffs) {
+            if (!b.enabled) continue;
+            totalBuffMs += b.animationMs + b.postBuffGapMs;
+            int ivMs = b.rebuffIntervalSec * 1000;
+            if (ivMs < minIntervalMs) minIntervalMs = ivMs;
+        }
+        if (minIntervalMs != INT_MAX && totalBuffMs > minIntervalMs / 2) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f),
+                "Canh bao: Tong thoi gian buff (%d ms) > 50%% chu ky nho nhat (%d ms).\nCo the chong cheo voi rebuff.",
+                totalBuffMs, minIntervalMs);
         }
     }
 

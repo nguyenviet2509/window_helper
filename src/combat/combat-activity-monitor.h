@@ -10,7 +10,7 @@ public:
     bool mobLikelyDead() const;
 
     // Tunable.
-    int windowSize = 40;             // 40 samples * 50ms = 2.0s
+    int windowSize = 20;             // 20 samples * 50ms = 1.0s
     double mpDrainEpsilon = 0.010;   // <1% change considered "no MP drain"
     double hpDropEpsilon  = 0.010;
 

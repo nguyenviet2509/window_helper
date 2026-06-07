@@ -15,6 +15,17 @@
       }
     },
     {
+      "name": "ninja",
+      "displayName": "Ninja (no VS dependency)",
+      "description": "Ninja generator — use from Developer PowerShell for VS. Bypasses VS Insiders CMakeNativePackage issues.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-ninja",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
       "name": "portable",
       "displayName": "Portable (static, zero-dep single exe)",
       "description": "Static link MSVC CRT + OpenCV + deps. Single exe, no DLLs, no VC++ Redist needed. First build slow (~15-30min compiling OpenCV static).",
@@ -33,6 +44,11 @@
       "name": "default-release",
       "configurePreset": "default",
       "configuration": "Release",
+      "targets": ["WindowHelper"]
+    },
+    {
+      "name": "ninja-release",
+      "configurePreset": "ninja",
       "targets": ["WindowHelper"]
     },
     {
