@@ -63,7 +63,9 @@ private:
     std::function<void(bool)> onSessionLock_;
 public:
     void notifySessionLock(bool locked) { if (onSessionLock_) onSessionLock_(locked); }
+    void onResize(unsigned w, unsigned h);
 private:
+    void applyPendingResize();
 
     TrayIcon* tray_ = nullptr;
     HotkeyManager* hotkey_ = nullptr;

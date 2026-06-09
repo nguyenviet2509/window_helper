@@ -64,6 +64,13 @@ LRESULT CALLBACK MainWndProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
         return 0;
     }
     switch (m) {
+    case WM_SIZE:
+        // Hoãn resize swap chain tới đầu frame kế (tránh resize giữa lúc đang
+        // render). SIZE_MINIMIZED không quan tâm — chỉ skip vẽ trong runLoop.
+        if (g_self && wp != SIZE_MINIMIZED) {
+            g_self->onResize(LOWORD(lp), HIWORD(lp));
+        }
+        return 0;
     case WM_SYSCOMMAND:
         if ((wp & 0xfff0) == SC_KEYMENU) return 0;
         break;
@@ -244,10 +251,14 @@ void MainWindow::drawSettingsPanel() {
         any |= percentInput("Ngưỡng hồi HP (%)", &p.hpThreshold, 100.0f);
         any |= percentInput("Ngưỡng hồi MP (%)", &p.mpThreshold, 100.0f);
         any |= percentInput("Ngưỡng hồi SP (%)", &p.spThreshold, 100.0f);
-        any |= percentInput("Ngưỡng recall HP (%)", &p.hpRecallThreshold, 50.0f);
-        any |= ImGui::DragInt("Recall ổn định (ms)", &p.hpRecallStableMs, 100, 500, 10000);
-        any |= ImGui::DragInt("Cooldown bình (ms)", &p.cooldownMs, 50, 200, 3000);
-        any |= ImGui::DragInt("Số frame xác nhận", &p.confirmFrames, 1, 1, 5);
+        // Recall (F12 bùa hồi thành) tạm ẩn UI; logic vẫn chạy theo giá trị
+        // trong config.json. Bỏ comment 2 dòng dưới khi cần expose lại.
+        // any |= percentInput("Ngưỡng recall HP (%)", &p.hpRecallThreshold, 50.0f);
+        // any |= ImGui::DragInt("Recall ổn định (ms)", &p.hpRecallStableMs, 100, 500, 10000);
+        // Cooldown bình + Số frame xác nhận: logic vẫn chạy theo config.json.
+        // Bỏ comment 2 dòng dưới khi cần expose lại.
+        // any |= ImGui::DragInt("Cooldown bình (ms)", &p.cooldownMs, 50, 200, 3000);
+        // any |= ImGui::DragInt("Số frame xác nhận", &p.confirmFrames, 1, 1, 5);
         if (any) markDirty();
     }
 
@@ -388,7 +399,29 @@ void MainWindow::drawSettingsPanel() {
     ImGui::End();
 }
 
+void MainWindow::onResize(unsigned w, unsigned h) {
+    if (!dx_ || !dx_->device) return;
+    dx_->resizeW = w;
+    dx_->resizeH = h;
+    dx_->pending = true;
+}
+
+void MainWindow::applyPendingResize() {
+    if (!dx_->pending) return;
+    if (dx_->resizeW == 0 || dx_->resizeH == 0) { dx_->pending = false; return; }
+    dx_->rtv.Reset();
+    HRESULT hr = dx_->swap->ResizeBuffers(0, dx_->resizeW, dx_->resizeH,
+                                          DXGI_FORMAT_UNKNOWN, 0);
+    if (SUCCEEDED(hr)) {
+        ComPtr<ID3D11Texture2D> back;
+        dx_->swap->GetBuffer(0, IID_PPV_ARGS(&back));
+        dx_->device->CreateRenderTargetView(back.Get(), nullptr, &dx_->rtv);
+    }
+    dx_->pending = false;
+}
+
 void MainWindow::renderFrame() {
+    applyPendingResize();
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();

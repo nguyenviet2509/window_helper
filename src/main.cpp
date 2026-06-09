@@ -10,6 +10,9 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <algorithm>
+#include <string>
+#include <cwctype>
 
 #include "capture/wgc-capture.h"
 #include "vision/vision-pipeline.h"
@@ -36,9 +39,25 @@ constexpr const wchar_t* kSingleInstanceMutex =
 constexpr const wchar_t* kMainWindowClass = L"WindowHelperUI";
 
 HWND FindTarget() {
+    // Exact match cho mock + tên kinh điển trước (nhanh).
     const wchar_t* names[] = { L"Priston Tale", L"PtMockGame", L"PristonTale" };
     for (auto* n : names) if (HWND h = FindWindowW(nullptr, n)) return h;
-    return nullptr;
+    // Fallback: quét mọi top-level window, khớp chứa "priston" (case-insensitive).
+    // Bắt được biến thể tiêu đề như "Priston Tale 2.8", "Priston Tale - [Server]"...
+    struct Ctx { HWND found = nullptr; } ctx;
+    EnumWindows([](HWND h, LPARAM lp) -> BOOL {
+        if (!IsWindowVisible(h)) return TRUE;
+        wchar_t title[256] = {};
+        if (GetWindowTextW(h, title, 256) <= 0) return TRUE;
+        std::wstring t(title);
+        std::transform(t.begin(), t.end(), t.begin(), ::towlower);
+        if (t.find(L"priston") != std::wstring::npos) {
+            reinterpret_cast<Ctx*>(lp)->found = h;
+            return FALSE; // stop enumeration
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&ctx));
+    return ctx.found;
 }
 
 BarConfig MakeBar(int x, int y, int w, int h, std::vector<HueRange> hues) {
@@ -69,6 +88,9 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     // Logger.
     std::filesystem::create_directories("logs");
     Logger::instance().open("logs/WindowHelper.log");
+    // Production: chỉ ghi Warn/Error để giữ log gọn khi chạy dài.
+    // Đổi sang LogLevel::Info hoặc Debug khi cần điều tra.
+    Logger::instance().setMinLevel(LogLevel::Warn);
     LOG_INFO("WindowHelper starting");
 
     // Config — resolve cạnh .exe để tránh phụ thuộc CWD lúc launch
@@ -120,7 +142,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     ActionDispatcher dispatcher(sched, combat, cfg);
     dispatcher.setRefillScheduler(&refill);
     dispatcher.setLogger([](const char* tag, int prio, WORD vk) {
-        Logger::instance().logf(LogLevel::Info, "[dispatch] %s prio=P%d vk=0x%02X",
+        Logger::instance().logf(LogLevel::Debug, "[dispatch] %s prio=P%d vk=0x%02X",
                                 tag, prio, vk);
     });
 
@@ -145,7 +167,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
                          std::chrono::steady_clock::now().time_since_epoch()).count();
         if (nowMs - lastLogMs.load() >= 1000) {
             lastLogMs.store(nowMs);
-            Logger::instance().logf(LogLevel::Info,
+            Logger::instance().logf(LogLevel::Debug,
                 "[vision] HP=%.2f MP=%.2f SP=%.2f valid=%d seq=%llu",
                 s.hpPct, s.mpPct, s.spPct, (int)s.valid, (unsigned long long)s.seq);
         }
