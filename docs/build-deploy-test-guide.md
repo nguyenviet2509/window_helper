@@ -24,27 +24,64 @@ Mở **Developer PowerShell for VS 2022** rồi vào source root.
 
 ## 3. Build
 
-### 3.1 Build mọi exe
+Repo có sẵn 3 preset trong `CMakePresets.json` (hiện đang giữ ở `CMakePresets.json.bak` — restore khi cần):
+
+| Preset | Generator | Triplet | Output dir | Mục đích |
+|--------|-----------|---------|------------|----------|
+| `default` | VS 18 2026, x64 | `x64-windows` (dynamic) | `build/` | Dev nhanh, kèm DLL OpenCV |
+| `ninja` | Ninja | `x64-windows` (dynamic) | `build-ninja/` | Bypass VS, dùng từ Developer PS |
+| `portable` | VS 18 2026, x64 | `x64-windows-static` + `/MT` | `build-portable/` | Single-exe static, no DLL, no VC++ Redist |
+
+Target chính: **`WindowHelper`** — exe output có tên ngẫu nhiên `svc_<random>.exe` (chống detect; tên sinh tại configure-time, giữ nguyên giữa các lần rebuild).
+
+### 3.1 Build dev (dynamic, nhanh)
 
 ```powershell
-cmake -B build -S . -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
+# Restore preset (lần đầu)
+Copy-Item CMakePresets.json.bak CMakePresets.json
+
+# Configure + build
+cmake --preset default
+cmake --build build --config Release --target WindowHelper
 ```
 
-Output:
-- `build\bin\Release\WindowHelper.exe` — tool chính
-- `build\bin\Release\PtMockGame.exe` — mock target (Phase 1 test)
-- `build\bin\Release\PostMessageProbe.exe` — Phase 0 probe
+Output: `build\bin\Release\svc_*.exe` + DLLs (`opencv_*.dll`, `libpng16.dll`, `libwebp*.dll`, …) — phải copy kèm khi share.
 
-Lần build đầu vcpkg sẽ pull `opencv4`, `nlohmann-json`, `imgui[dx11-binding,win32-binding]` — mất 10–30 phút.
-
-### 3.2 Build target lẻ
-
+Rebuild nhanh (đã configure trước):
 ```powershell
 cmake --build build --config Release --target WindowHelper
+```
+
+Lần build đầu vcpkg pull `opencv4`, `nlohmann-json`, `imgui[dx11-binding,win32-binding]` — mất 10–30 phút.
+
+### 3.2 Build portable (single static exe)
+
+```powershell
+cmake --preset portable
+cmake --build build-portable --config Release --target WindowHelper
+```
+
+Output: `build-portable\bin\Release\svc_*.exe` duy nhất (không DLL, không cần VC++ Redist). **Lần đầu rất lâu (~15–30 phút)** vì compile OpenCV static; lần sau nhanh.
+
+### 3.3 Build + đóng gói zip share (one-shot)
+
+```powershell
+.\package.ps1                       # build portable + tạo dist\WindowHelper.zip
+.\package.ps1 -SkipBuild            # chỉ đóng gói lại từ build-portable hiện có
+.\package.ps1 -Version 1.2.3        # gắn version vào tên zip
+.\package.ps1 -OutDir D:\release    # đổi output dir
+```
+
+Script tự configure preset `portable` (nếu chưa) → build target `WindowHelper` → copy `svc_*.exe` + `config.json` + `HUONG-DAN-CAU-HINH.md` vào `dist\` → zip.
+
+### 3.4 Build target lẻ (probe / mock)
+
+```powershell
 cmake --build build --config Release --target postmessage_probe
 cmake --build build --config Release --target PtMockGame
 ```
+
+Output: `build\bin\Release\PostMessageProbe.exe`, `build\bin\Release\PtMockGame.exe`.
 
 ## 4. Phase 0 — Probe (BẮT BUỘC trước khi tin tưởng PostMessage)
 
@@ -98,16 +135,26 @@ DebugView (sysinternals) hoặc đọc `logs/WindowHelper.log` (rolling 5 MB × 
 
 ## 7. Deploy portable
 
-Copy thư mục output sang USB / máy đích:
+**Cách khuyến nghị:** chạy `.\package.ps1` → lấy `dist\WindowHelper*.zip` giao user. Bên trong:
 ```
 WindowHelper/
-├── WindowHelper.exe
-├── config.json          # tự sinh ở lần chạy đầu
-├── logs/                # tự tạo
-└── (DLLs runtime nếu vcpkg dynamic link — copy `*.dll` từ build\bin\Release)
+├── svc_<random>.exe     # exe duy nhất, static link
+├── config.json          # default config (user có thể edit)
+├── HUONG-DAN-CAU-HINH.md
+└── logs/                # tự tạo ở lần chạy đầu
 ```
 
-Không cần Admin. Không cài driver. Không cần internet runtime.
+**Cách thủ công (dynamic build):** copy từ `build\bin\Release\`:
+```
+WindowHelper/
+├── svc_<random>.exe
+├── config.json
+├── opencv_core4.dll, opencv_imgcodecs4.dll, opencv_imgproc4.dll
+├── libpng16.dll, libwebp*.dll, libsharpyuv.dll, tiff.dll, jpeg62.dll, liblzma.dll, z.dll
+└── logs/
+```
+
+Không cần Admin. Không cài driver. Không cần internet runtime. Bản `portable` không cần VC++ Redist; bản `default` cần Redist 2022 nếu máy đích chưa có.
 
 ## 8. Troubleshooting
 
