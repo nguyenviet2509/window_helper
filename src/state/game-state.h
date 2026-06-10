@@ -37,8 +37,10 @@ struct CombatConfig {
     bool enabled = false;
     bool buffEnabled = false;     // Master gate cho toàn bộ buff (F9). False = bot không cast buff.
     WORD mainAttackKey = VK_F1;   // arming key
-    int repickMinDwellMs = 1000;  // hold attack at least this long before repicking
-    int repickMaxDwellMs = 8000;  // forced repick after this long
+    int repickMinDwellMs = 6000;  // hold attack at least this long before repicking
+    int repickMaxDwellMs = 22000; // forced repick after this long (escape hatch cho mob bug/immortal)
+    int deathConfirmMs = 2500;    // no-MP-drop window (ms) để declare mob dead
+    double mpDropEpsilon = 0.005; // 0.5% threshold cho "MP went down" tick
     int attackRadiusMin = 50;
     int attackRadiusMax = 140;
     bool waitMpGate = true;

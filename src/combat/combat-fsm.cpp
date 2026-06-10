@@ -71,7 +71,10 @@ void CombatFsm::enterArming(std::chrono::steady_clock::time_point now) {
 
 void CombatFsm::enterAttacking(std::chrono::steady_clock::time_point now) {
     state_ = CombatState::Attacking;
-    activity_.reset();
+    // Propagate hidden tunables từ config xuống monitor mỗi lần re-enter.
+    activity_.deathConfirmMs = cfg_.deathConfirmMs;
+    activity_.mpDropEpsilon = cfg_.mpDropEpsilon;
+    activity_.reset(now);
     lastPickAt_ = now;
     lastAttackAt_ = now;
 }
@@ -119,7 +122,7 @@ void CombatFsm::stepBuffing(std::chrono::steady_clock::time_point now) {
 }
 
 void CombatFsm::stepAttacking(const VisionState& v, std::chrono::steady_clock::time_point now) {
-    activity_.update(v.hpPct, v.mpPct);
+    activity_.update(v.mpPct, now);
 
     // Re-buff khi bất kỳ slot enabled nào đã quá rebuffIntervalSec từ lần cast trước.
     // Hủy engagement lock để sau khi buff xong, FSM repick mob ngay (không phải đợi
@@ -136,7 +139,7 @@ void CombatFsm::stepAttacking(const VisionState& v, std::chrono::steady_clock::t
     auto dwell = now - lastPickAt_;
     bool minDwellOk = dwell >= ms(cfg_.repickMinDwellMs);
     bool forceRepick = dwell >= ms(cfg_.repickMaxDwellMs);
-    bool mobDead = minDwellOk && activity_.mobLikelyDead();
+    bool mobDead = minDwellOk && activity_.mobLikelyDead(now);
     bool firstClick = lastPickAt_.time_since_epoch().count() == 0;
 
     // Engagement lock: sau shift+right-click, game tự auto-chain attack mob đó.
@@ -156,7 +159,7 @@ void CombatFsm::stepAttacking(const VisionState& v, std::chrono::steady_clock::t
 
     lastPickAt_ = now;
     lastAttackAt_ = now;
-    activity_.reset();
+    activity_.reset(now);
 
     int jitter = cfg_.engagementLockJitterMs > 0
         ? (std::rand() % (cfg_.engagementLockJitterMs + 1))

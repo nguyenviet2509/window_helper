@@ -32,8 +32,10 @@
     "cycleDurationSec": 300,
     "enabled": true,
     "mainAttackKey": 112,
-    "repickMaxDwellMs": 15000,
-    "repickMinDwellMs": 2000,
+    "repickMaxDwellMs": 22000,
+    "repickMinDwellMs": 6000,
+    "deathConfirmMs": 2500,
+    "mpDropEpsilon": 0.005,
     "waitMpGate": true,
     "waitMpGateThreshold": 0.15
   },

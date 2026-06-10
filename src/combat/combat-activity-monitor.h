@@ -1,20 +1,24 @@
 #pragma once
-// Smart mob-death detect: track HP/MP samples in a ~2s sliding window. If
-// neither has moved meaningfully, current target is likely dead -> repick.
-#include <deque>
+// MP-only mob-death detect: track timestamp of last "MP went down" tick.
+// Nếu không có tick âm nào trong deathConfirmMs window -> mob coi như đã chết.
+// "MP tụt rồi hồi lại" vẫn tính là active vì timer chỉ reset khi có tick âm mới,
+// regen lên không xóa dấu (khác với logic max-min cũ bị nhiễu bởi regen).
+#include <chrono>
 
 class CombatActivityMonitor {
 public:
-    void update(double hp, double mp);
-    void reset();
-    bool mobLikelyDead() const;
+    using Clock = std::chrono::steady_clock;
+    using TimePoint = Clock::time_point;
 
-    // Tunable.
-    int windowSize = 20;             // 20 samples * 50ms = 1.0s
-    double mpDrainEpsilon = 0.010;   // <1% change considered "no MP drain"
-    double hpDropEpsilon  = 0.010;
+    void update(double mp, TimePoint now);
+    void reset(TimePoint now);
+    bool mobLikelyDead(TimePoint now) const;
+
+    // Tunable (loaded from config.json, hidden — không expose UI).
+    int deathConfirmMs = 2500;     // no-MP-drop window để declare dead
+    double mpDropEpsilon = 0.005;  // 0.5% threshold cho "MP went down" tick
 
 private:
-    std::deque<double> hp_, mp_;
-    static double maxMinusMin(const std::deque<double>& d);
+    double prevMp_ = -1.0;                          // sentinel "no sample yet"
+    TimePoint lastMpDropAt_ = TimePoint::min();     // last "MP went down" event
 };

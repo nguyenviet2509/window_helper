@@ -79,6 +79,8 @@ static void toJson(json& j, const CombatConfig& c) {
         {"mainAttackKey", (int)c.mainAttackKey},
         {"repickMinDwellMs", c.repickMinDwellMs},
         {"repickMaxDwellMs", c.repickMaxDwellMs},
+        {"deathConfirmMs", c.deathConfirmMs},
+        {"mpDropEpsilon", c.mpDropEpsilon},
         {"attackRadiusMin", c.attackRadiusMin},
         {"attackRadiusMax", c.attackRadiusMax},
         {"waitMpGate", c.waitMpGate},
@@ -101,6 +103,8 @@ static void fromJson(const json& j, CombatConfig& c) {
     int legacyCycleSec = j.value("cycleDurationSec", 0);
     if (j.contains("repickMinDwellMs")) c.repickMinDwellMs = j["repickMinDwellMs"];
     if (j.contains("repickMaxDwellMs")) c.repickMaxDwellMs = j["repickMaxDwellMs"];
+    if (j.contains("deathConfirmMs")) c.deathConfirmMs = j["deathConfirmMs"];
+    if (j.contains("mpDropEpsilon")) c.mpDropEpsilon = j["mpDropEpsilon"];
     if (j.contains("attackRadiusMin")) c.attackRadiusMin = j["attackRadiusMin"];
     if (j.contains("attackRadiusMax")) c.attackRadiusMax = j["attackRadiusMax"];
     if (j.contains("waitMpGate")) c.waitMpGate = j["waitMpGate"];

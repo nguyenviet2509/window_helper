@@ -37,8 +37,8 @@ Logic chọn mob + click attack + buff cycle.
 | Tham số | Default | Ý nghĩa |
 |---------|---------|---------|
 | **Chu kỳ buff (giây)** | 300 | Sau N giây attack, restart buff cycle. Tránh trôi buff timer. |
-| **Chờ tối thiểu khi đổi mục tiêu (ms)** | 2000 | Sau khi click 1 mob, ít nhất phải đợi N ms mới được pick mob khác. Tránh đổi mob liên tục. |
-| **Chờ tối đa khi đổi mục tiêu (ms)** | 15000 | Sau N ms attack 1 mob mà không thấy nó chết → force pick mob khác. Tránh kẹt vào mob immortal/bug. |
+| **Chờ tối thiểu khi đổi mục tiêu (ms)** | 6000 | Sau khi click 1 mob, ít nhất phải đợi N ms mới được pick mob khác. Cần ≥ engagement lock + jitter. |
+| **Chờ tối đa khi đổi mục tiêu (ms)** | 22000 | Sau N ms attack 1 mob mà chưa chết → force pick mob khác. Escape hatch cho mob bug/immortal. Cover p95 TTK + safety. |
 | **Khoá đánh sau shift+phải (ms)** | 5000 | Sau click shift+phải attack, im lặng N ms để game tự auto-chain attack mob đó. Tránh spam click khi đang đánh. |
 | **Dao động khoá đánh (ms)** | 500 | Random hoá độ dài khoá ±N ms. Anti-pattern detect (không cố định 5000ms). |
 | **Bán kính đánh (min)** | 60 | Khoảng cách tối thiểu (px) từ tâm nhân vật đến điểm click attack. |
