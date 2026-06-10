@@ -26,6 +26,9 @@ public:
 
     void enable(bool on);
     bool enabled() const { return enabled_; }
+    // Master gate buff (F9 hotkey). Tách biệt với enable() — F8 chỉ đánh, F9 chỉ buff.
+    void setBuffEnabled(bool on) { cfg_.buffEnabled = on; }
+    bool buffEnabled() const { return cfg_.buffEnabled; }
 
     void tick(const VisionState& v, std::chrono::steady_clock::time_point now);
 

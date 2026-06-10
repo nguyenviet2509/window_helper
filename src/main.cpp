@@ -196,6 +196,10 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         combat.enable(on);
         Logger::instance().logf(LogLevel::Info, "AUTO toggled -> %s", on ? "ON" : "OFF");
     });
+    win.setOnBuffToggle([&](bool on) {
+        combat.setBuffEnabled(on);
+        Logger::instance().logf(LogLevel::Info, "BUFF toggled -> %s", on ? "ON" : "OFF");
+    });
     // Hot-reload các config sub-section sau khi UI flush (debounced).
     win.setOnConfigChanged([&](const AppConfig& c) {
         dispatcher.updateConfig(c);
@@ -227,6 +231,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     // Global hotkey F8 -> toggle AUTO.
     HotkeyManager hk;
     hk.registerKey(win.hwnd(), 1, 0, VK_F8, [&] { win.toggleCombatRequested(); });
+    hk.registerKey(win.hwnd(), 2, 0, VK_F9, [&] { win.toggleBuffRequested(); });
     win.attachHotkey(&hk);
 
     // Session lock notification.

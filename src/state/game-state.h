@@ -35,6 +35,7 @@ struct BuffSlotCfg {
 
 struct CombatConfig {
     bool enabled = false;
+    bool buffEnabled = false;     // Master gate cho toàn bộ buff (F9). False = bot không cast buff.
     WORD mainAttackKey = VK_F1;   // arming key
     int repickMinDwellMs = 1000;  // hold attack at least this long before repicking
     int repickMaxDwellMs = 8000;  // forced repick after this long

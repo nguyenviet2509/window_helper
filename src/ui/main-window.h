@@ -23,6 +23,7 @@ public:
 
     // Callbacks fired from UI thread (e.g. AUTO toggle).
     void setOnCombatToggle(std::function<void(bool)> cb) { onCombatToggle_ = std::move(cb); }
+    void setOnBuffToggle(std::function<void(bool)> cb) { onBuffToggle_ = std::move(cb); }
     // Fires after debounced flush (config saved). Use to propagate live edits to runtime systems.
     void setOnConfigChanged(std::function<void(const AppConfig&)> cb) { onConfigChanged_ = std::move(cb); }
 
@@ -34,6 +35,7 @@ public:
 
     // Toggle the combat flag from any thread (UI marshals via PostMessage).
     void toggleCombatRequested();
+    void toggleBuffRequested();
 
     HWND hwnd() const { return hwnd_; }
     TrayIcon* tray() const { return tray_; }
@@ -58,6 +60,7 @@ private:
     int debounceMs_ = 500;
 
     std::function<void(bool)> onCombatToggle_;
+    std::function<void(bool)> onBuffToggle_;
     std::function<void(const AppConfig&)> onConfigChanged_;
     std::function<void()> onExit_;
     std::function<void(bool)> onSessionLock_;

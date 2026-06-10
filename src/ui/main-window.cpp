@@ -227,11 +227,20 @@ void MainWindow::drawSettingsPanel() {
     ImGui::Separator();
 
     bool combatOn = draft_.combat.enabled;
-    if (ImGui::Checkbox("AUTO (Đánh quái)", &combatOn)) {
+    if (ImGui::Checkbox("AUTO (F8 — Đánh quái)", &combatOn)) {
         draft_.combat.enabled = combatOn;
         if (onCombatToggle_) onCombatToggle_(combatOn);
         markDirty();
     }
+    bool buffOn = draft_.combat.buffEnabled;
+    if (ImGui::Checkbox("Bật Buff (F9)", &buffOn)) {
+        draft_.combat.buffEnabled = buffOn;
+        if (onBuffToggle_) onBuffToggle_(buffOn);
+        markDirty();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+        "Master gate cho toàn bộ buff. Tắt → bot không cast bất kỳ buff nào,\n"
+        "kể cả các slot bật ở mục Buff dưới.");
 
     // Ngưỡng nhập theo phần trăm (0-100). Lưu trữ vẫn là tỉ lệ 0.0-1.0.
     auto percentInput = [](const char* label, double* d, float maxPct) -> bool {
@@ -442,6 +451,12 @@ void MainWindow::requestClose() {
 void MainWindow::toggleCombatRequested() {
     draft_.combat.enabled = !draft_.combat.enabled;
     if (onCombatToggle_) onCombatToggle_(draft_.combat.enabled);
+    markDirty();
+}
+
+void MainWindow::toggleBuffRequested() {
+    draft_.combat.buffEnabled = !draft_.combat.buffEnabled;
+    if (onBuffToggle_) onBuffToggle_(draft_.combat.buffEnabled);
     markDirty();
 }
 

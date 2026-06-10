@@ -27,8 +27,10 @@ void CombatFsm::enable(bool on) {
     enabled_ = on;
     if (!on) { state_ = CombatState::Idle; return; }
     auto now = std::chrono::steady_clock::now();
-    if (!buffsAnyEnabled(cfg_.buffs)) enterArming(now);
-    else enterBuffing(now);
+    // F8 chỉ kích hoạt đánh quái — KHÔNG cast buff lúc khởi động.
+    // Buff chạy độc lập qua master switch F9 (cfg_.buffEnabled) + chu kỳ rebuff
+    // trong stepAttacking. Nếu F9 OFF, findDueSlot luôn trả -1 → không buff.
+    enterArming(now);
 }
 
 void CombatFsm::updateConfig(const CombatConfig& cfg) {
@@ -43,6 +45,8 @@ void CombatFsm::enterBuffing(std::chrono::steady_clock::time_point now) {
 }
 
 int CombatFsm::findDueSlot(std::chrono::steady_clock::time_point now) const {
+    // Master gate F9: tắt → không buff.
+    if (!cfg_.buffEnabled) return -1;
     for (size_t i = 0; i < cfg_.buffs.size() && i < lastCastAt_.size(); ++i) {
         const auto& b = cfg_.buffs[i];
         if (!b.enabled) continue;
@@ -118,7 +122,10 @@ void CombatFsm::stepAttacking(const VisionState& v, std::chrono::steady_clock::t
     activity_.update(v.hpPct, v.mpPct);
 
     // Re-buff khi bất kỳ slot enabled nào đã quá rebuffIntervalSec từ lần cast trước.
+    // Hủy engagement lock để sau khi buff xong, FSM repick mob ngay (không phải đợi
+    // hết phần còn lại của lock window mới shift+right click).
     if (findDueSlot(now) >= 0) {
+        engagementUntil_ = now;
         enterBuffing(now);
         return;
     }

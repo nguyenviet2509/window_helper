@@ -75,6 +75,7 @@ static void toJson(json& j, const CombatConfig& c) {
     for (const auto& b : c.buffs) { json bj; toJson(bj, b); buffs.push_back(bj); }
     j = json{
         {"enabled", c.enabled},
+        {"buffEnabled", c.buffEnabled},
         {"mainAttackKey", (int)c.mainAttackKey},
         {"repickMinDwellMs", c.repickMinDwellMs},
         {"repickMaxDwellMs", c.repickMaxDwellMs},
@@ -94,6 +95,7 @@ static void toJson(json& j, const CombatConfig& c) {
 
 static void fromJson(const json& j, CombatConfig& c) {
     if (j.contains("enabled")) c.enabled = j["enabled"];
+    if (j.contains("buffEnabled")) c.buffEnabled = j["buffEnabled"];
     if (j.contains("mainAttackKey")) c.mainAttackKey = (WORD)j["mainAttackKey"].get<int>();
     // Legacy global cycle: dùng làm fallback cho slot thiếu rebuffIntervalSec.
     int legacyCycleSec = j.value("cycleDurationSec", 0);
