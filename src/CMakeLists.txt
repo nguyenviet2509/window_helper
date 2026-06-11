@@ -26,6 +26,8 @@ add_executable(WindowHelper WIN32
     ui/main-window.cpp
     ui/calibration-window.cpp
     ui/tray-icon.cpp
+    ui/activation-dialog.cpp
+    license/hwid-collector.cpp
     resources/version.rc
 )
 
@@ -36,6 +38,7 @@ target_link_libraries(WindowHelper PRIVATE
     nlohmann_json::nlohmann_json
     imgui::imgui
     user32 gdi32 d3d11 dxgi dxguid windowsapp runtimeobject wtsapi32 shell32 comctl32
+    iphlpapi bcrypt
 )
 
 target_compile_definitions(WindowHelper PRIVATE _WIN32_WINNT=0x0A00)
