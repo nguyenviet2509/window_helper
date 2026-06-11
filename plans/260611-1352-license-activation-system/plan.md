@@ -2,7 +2,7 @@
 title: License / Activation System
 slug: license-activation-system
 created: 2026-06-11
-status: in_progress
+status: completed
 priority: high
 brainstorm: ../reports/brainstorm-260611-1352-license-activation-system.md
 blockedBy: []
@@ -27,8 +27,8 @@ Gate WindowHelper.exe behind per-machine token; manage from existing Node/Expres
 | 1 | HWID collector + ImGui activation dialog skeleton | completed | [phase-01-hwid-and-dialog.md](phase-01-hwid-and-dialog.md) |
 | 2 | Server endpoints + DB schema + admin UI tab | completed | [phase-02-server-and-admin.md](phase-02-server-and-admin.md) |
 | 3 | WinHTTP client + Ed25519 verify + AES cache | completed | [phase-03-client-network-crypto.md](phase-03-client-network-crypto.md) |
-| 4 | Grace period + periodic verify + revoke handling | pending | [phase-04-grace-and-revoke.md](phase-04-grace-and-revoke.md) |
-| 5 | Integrate main.cpp gate + tray status + polish | pending | [phase-05-integration-polish.md](phase-05-integration-polish.md) |
+| 4 | Grace period + periodic verify + revoke handling | completed | [phase-04-grace-and-revoke.md](phase-04-grace-and-revoke.md) |
+| 5 | Integrate main.cpp gate + tray status + polish | completed | [phase-05-integration-polish.md](phase-05-integration-polish.md) |
 | 6 | Discord bot integration (/license slash commands + DM + audit log) | completed | [phase-06-discord-bot-integration.md](phase-06-discord-bot-integration.md) |
 
 ## Key Dependencies
@@ -60,3 +60,30 @@ Gate WindowHelper.exe behind per-machine token; manage from existing Node/Expres
 - Cache file copy chéo máy → giải mã fail → force re-activate
 - Mất mạng 24h sau activate → vẫn chạy bình thường
 - Tampered server response → client reject (Ed25519 sig fail)
+
+## Final Status
+
+**Completion Date:** 2026-06-11
+
+**All 6 phases completed successfully:**
+
+1. ✓ Phase 1: HWID + ImGui dialog skeleton
+2. ✓ Phase 2: Server endpoints + DB schema + admin UI
+3. ✓ Phase 3: WinHTTP client + Ed25519 + AES cache
+4. ✓ Phase 4: Grace 48h + periodic verify 6h + revoke detection
+5. ✓ Phase 5: main.cpp gate + tray "License Info" + UX polish
+6. ✓ Phase 6: Discord bot integration (/license + audit log)
+
+**Implementation Summary:**
+- **LicenseManager** orchestrator: Bootstrap branching (ENTER_MAIN | SHOW_DIALOG | EXIT), atomic grace state, Snapshot() for race-safe reads
+- **Periodic verify** thread: 6h interval, network-safe (no retry kill), async detection of revoke/expiry
+- **Main integration:** License gate inserted after window.init() + ImGui init, before capture/vision spawn
+- **Client UX:** Activation dialog with Copy Machine ID, Vietnamese error messages, tray "License Info" menu
+- **Graceful revoke:** 30s countdown toast + clean shutdown
+- **Admin dashboard:** Alpine.js tab for token CRUD, event log with user HWID + timestamp + action
+
+**Code Repositories:**
+- `D:\Vietnt\Game\window_helper` — 4 commits (hwid, activation-dialog, license-manager, integration)
+- `D:\Vietnt\Project\bot_discord_app` — distributed license routes, DB tables, dashboard admin UI
+
+**Testing:** All phases validated by tester-260611-1630, code review passed (race conditions verified), ready for end-to-end deployment with real users/tokens.

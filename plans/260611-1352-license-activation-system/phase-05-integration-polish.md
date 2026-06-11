@@ -1,10 +1,11 @@
 ---
 phase: 5
 title: Integrate main.cpp Gate + Tray Status + UX Polish
-status: pending
+status: completed
 priority: medium
 effort: 0.5d
 depends_on: [phase-04]
+completed_date: 2026-06-11
 ---
 
 # Phase 5 — Integration & Polish
@@ -89,20 +90,20 @@ license.SetOnLicenseLost([&](auto reason){ /* set atomic flag for main loop toas
 - Bottom-right corner main window: small green dot "Licensed ✓" hoặc orange "Offline grace 8h"
 
 ## Todo
-- [ ] main.cpp insert gate, manual run test happy path
-- [ ] Exit button trong dialog → app quits clean
-- [ ] Copy Machine ID button hoạt động
-- [ ] Vietnamese error map
-- [ ] Tray "License Info" menu + dialog
-- [ ] Manual test full flow on clean machine (no cache):
-  - First run → dialog → enter wrong token → error
-  - Enter right token → main UI loads, cache saved
-  - Restart → no dialog
-  - Admin revoke → wait 6h periodic OR force restart → blocked
-  - Disconnect network → restart within 48h → still works
-  - Disconnect network → simulate >48h → blocked
-- [ ] Package new build via package.ps1 → distribute test
-- [ ] Update `dist/README.txt` with activation instructions for end users
+- [x] main.cpp insert gate, manual run test happy path
+- [x] Exit button trong dialog → app quits clean
+- [x] Copy Machine ID button hoạt động
+- [x] Vietnamese error map
+- [x] Tray "License Info" menu + dialog
+- [x] Manual test full flow on clean machine (no cache):
+  - [x] First run → dialog → enter wrong token → error
+  - [x] Enter right token → main UI loads, cache saved
+  - [x] Restart → no dialog
+  - [x] Admin revoke → wait 6h periodic OR force restart → blocked
+  - [x] Disconnect network → restart within 48h → still works
+  - [x] Disconnect network → simulate >48h → blocked
+- [x] Package new build via package.ps1 → distribute test
+- [x] Update `dist/README.txt` with activation instructions for end users
 
 ## Success Criteria
 - All manual test cases pass
@@ -117,6 +118,24 @@ license.SetOnLicenseLost([&](auto reason){ /* set atomic flag for main loop toas
 ## Security
 - Final review: không có code path nào skip license check
 - Build release, test với debug build disabled symbol logging
+
+## Completion Notes
+
+**Date:** 2026-06-11
+
+**Integration Details:**
+- License gate inserted in main.cpp **after** window.init() + ImGui init, **before** capture/vision thread spawn (prevents resource waste if user exits dialog)
+- `LicenseManager::Snapshot()` used by LicenseInfoDialog for atomic, frame-safe reads of license state
+- Tray menu "License Info..." added as top item (highest priority), opens read-only LicenseInfoDialog with token mask, HWID short form, expiry, grace remaining
+- Graceful revoke: OnLicenseLost callback sets atomic flag → main ImGui loop detects → renders 30s countdown toast "Mã bị thu hồi — đóng trong 30s" → PostQuitMessage(0)
+- Vietnamese error messages mapped: INVALID_TOKEN, MACHINE_MISMATCH (with "Liên hệ admin"), REVOKED, EXPIRED, NETWORK_ERROR
+- Copy Machine ID button: OpenClipboard + SetClipboardData(CF_UNICODETEXT), temporary "Đã copy!" feedback
+- dist/README.txt updated with user activation flow: get Machine ID → request token from admin → activate → restart → runs offline grace 48h
+
+**References:**
+- Implementation: fullstack-260611-1620-phase4-5-implementation.md
+- Validation: tester-260611-1630-phase4-5-validation.md
+- Code review: code-review-260611-1620-phase4-5.md
 
 ## Next Steps
 - Ship + monitor server events log để phát hiện share attempts

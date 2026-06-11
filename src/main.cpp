@@ -2,6 +2,7 @@
 // Pipeline: WgcCapture -> VisionPipeline -> ActionDispatcher (Pot + CombatFsm)
 //           -> InputScheduler -> Backend -> game window.
 // UI: Dear ImGui + DX11 settings panel, tray icon, F8 global hotkey.
+// License gate (Phase 4-5): Bootstrap -> dialog or ENTER_MAIN -> periodic verify.
 
 #include <windows.h>
 #include <wtsapi32.h>
@@ -31,7 +32,12 @@
 #include "ui/main-window.h"
 #include "ui/tray-icon.h"
 #include "ui/hotkey-manager.h"
+#include "ui/activation-dialog.h"
+#include "ui/license-info-dialog.h"
 #include "state/game-state.h"
+#include "license/license-manager.h"
+#include "license/license-types.h"
+#include "imgui.h"
 
 namespace {
 constexpr const wchar_t* kSingleInstanceMutex =
@@ -61,8 +67,6 @@ HWND FindTarget() {
 }
 
 // Build runtime BarConfig (vision pipeline) từ VisionBarCfg (config).
-// VisionBarCfg là plain data trong AppConfig; BarConfig là runtime struct trong
-// VisionPipeline. Tách layer cho phép swap config mà không pollute pipeline.
 BarConfig MakeBar(const VisionBarCfg& cfg) {
     BarConfig c;
     c.region = cfg.region;
@@ -92,13 +96,10 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     // Logger.
     std::filesystem::create_directories("logs");
     Logger::instance().open("logs/WindowHelper.log");
-    // Production: chỉ ghi Warn/Error để giữ log gọn khi chạy dài.
-    // Đổi sang LogLevel::Info hoặc Debug khi cần điều tra.
     Logger::instance().setMinLevel(LogLevel::Warn);
     LOG_INFO("WindowHelper starting");
 
-    // Config — resolve cạnh .exe để tránh phụ thuộc CWD lúc launch
-    // (shortcut Desktop vs double-click khác CWD sẽ đọc/ghi nhầm file).
+    // Config — resolve cạnh .exe để tránh phụ thuộc CWD lúc launch.
     auto exeDir = []() -> std::filesystem::path {
         wchar_t buf[MAX_PATH] = {};
         GetModuleFileNameW(nullptr, buf, MAX_PATH);
@@ -109,8 +110,6 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     const std::string configPath = (exeDir() / "config.json").string();
     if (loader.load(configPath, cfg)) {
         LOG_INFO("Loaded config.json");
-        // Schema migration: nếu file cũ thiếu section "vision" → materialize
-        // defaults trên disk để user thấy được + edit sau này.
         if (loader.visionMissing()) {
             LOG_WARN("config.json missing 'vision' section; filled defaults and saved.");
             loader.save(configPath, cfg);
@@ -131,7 +130,60 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         return 1;
     }
 
-    // Input + gate + scheduler. PT tu choi PostMessage -> dung SendInput foreground.
+    // UI init first — required for the license gate dialog AND the main settings panel.
+    // Capture/vision/input init happens AFTER the license gate below to avoid
+    // wasting resources when the user exits without activating.
+    MainWindow win(bus, loader, configPath);
+    if (!win.init(hInst, nShow)) {
+        MessageBoxW(nullptr, L"UI init failed.", L"WindowHelper", MB_ICONERROR);
+        Logger::instance().close();
+        return 3;
+    }
+
+    // ===== LICENSE GATE (Phase 4-5) =====
+    // Bootstrap: load encrypted cache → verify grace period → ENTER_MAIN | SHOW_DIALOG
+    License::LicenseManager licenseManager;
+    License::BootstrapResult licenseBootstrap = licenseManager.Bootstrap();
+
+    if (licenseBootstrap == License::BootstrapResult::EXIT) {
+        Logger::instance().close();
+        return 0;
+    }
+
+    if (licenseBootstrap == License::BootstrapResult::SHOW_DIALOG) {
+        ActivationDialog dlg;
+        bool activated   = false;
+        bool exitClicked = false;
+        dlg.SetOnActivated([&](License::CachedLicense lic) {
+            licenseManager.AdoptFromDialog(lic);
+            activated = true;
+        });
+        dlg.SetOnExit([&] { exitClicked = true; });
+        dlg.Open();
+
+        // Minimal render loop — activation dialog only, no settings panel.
+        MSG dmsg{};
+        while (!activated && !exitClicked) {
+            while (PeekMessageW(&dmsg, nullptr, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&dmsg);
+                DispatchMessageW(&dmsg);
+                if (dmsg.message == WM_QUIT) {
+                    Logger::instance().close();
+                    return 0;
+                }
+            }
+            win.renderActivationFrame([&] { dlg.Render(); });
+        }
+        if (exitClicked) {
+            Logger::instance().close();
+            return 0;
+        }
+    }
+
+    licenseManager.StartPeriodicVerify();
+    // ===== END LICENSE GATE =====
+
+    // Input + gate + scheduler.
     SendInputBackend backend;
     backend.setTarget(target);
     backend.setMousePathEnabled(cfg.combat.enableMousePath);
@@ -160,19 +212,16 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     WgcCapture cap;
     if (!cap.start(target)) {
         MessageBoxW(nullptr, L"WGC capture failed.", L"WindowHelper", MB_ICONERROR);
+        licenseManager.Stop();
         sched.stop(); Logger::instance().close();
         return 2;
     }
-    // Vision ROI + hue ranges loaded từ cfg.vision (auto-migrated above nếu cũ).
-    // Defaults = PT 1010x789 layout. Đổi qua config.json / preset cho server khác.
     auto hp = MakeBar(cfg.vision.hp);
     auto sp = MakeBar(cfg.vision.sp);
     auto mp = MakeBar(cfg.vision.mp);
     VisionPipeline pipe(cap, hp, mp, sp);
-    // Log gia tri detector moi 1s (tam thoi de debug calibration).
     std::atomic<uint64_t> lastLogMs{0};
-    // win sẽ được construct phía dưới; dùng raw pointer + setter sau khi UI init
-    // để tránh lifecycle phức tạp. Callback đọc qua pointer (nullable safe).
+    // win already constructed above; set pointer after pipeline ready.
     MainWindow* uiPtr = nullptr;
     pipe.setCallback([&](const VisionState& s) {
         health.notifyFrameArrived(s.seq);
@@ -198,15 +247,6 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         }
     });
 
-    // UI.
-    MainWindow win(bus, loader, configPath);
-    if (!win.init(hInst, nShow)) {
-        MessageBoxW(nullptr, L"UI init failed.", L"WindowHelper", MB_ICONERROR);
-        ticking.store(false); if (tickTh.joinable()) tickTh.join();
-        pipe.stop(); cap.stop(); sched.stop(); Logger::instance().close();
-        return 3;
-    }
-
     win.setOnCombatToggle([&](bool on) {
         combat.enable(on);
         Logger::instance().logf(LogLevel::Info, "AUTO toggled -> %s", on ? "ON" : "OFF");
@@ -215,19 +255,16 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         combat.setBuffEnabled(on);
         Logger::instance().logf(LogLevel::Info, "BUFF toggled -> %s", on ? "ON" : "OFF");
     });
-    // Hot-reload các config sub-section sau khi UI flush (debounced).
     win.setOnConfigChanged([&](const AppConfig& c) {
         dispatcher.updateConfig(c);
         refill.enable(c.refill.enabled);
         backend.setMousePathEnabled(c.combat.enableMousePath);
-        // Vision ROI/hue: hot-reload pipeline với config mới (atomic swap, EMA reset).
         pipe.updateConfig(MakeBar(c.vision.hp), MakeBar(c.vision.mp), MakeBar(c.vision.sp));
         Logger::instance().logf(LogLevel::Info,
             "[config] hot-reload refill.enabled=%d intervalSec hp=%d sp=%d mp=%d vision=updated",
             (int)c.refill.enabled,
             c.refill.hp.intervalSec, c.refill.sp.intervalSec, c.refill.mp.intervalSec);
     });
-    // UI pointer cho vision callback push live %.
     uiPtr = &win;
     win.setOnSessionLockChange([&](bool locked) {
         gate.setSessionLocked(locked);
@@ -235,7 +272,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
                         : "Session unlocked — input restored");
     });
 
-    // Tray.
+    // Tray — "License Info..." item added by Phase 5.
     TrayIcon tray;
     HICON icon = LoadIconW(nullptr, IDI_APPLICATION);
     tray.install(win.hwnd(), icon, L"Window Helper");
@@ -244,10 +281,16 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         ShowWindow(win.hwnd(), SW_SHOW); SetForegroundWindow(win.hwnd());
     });
     tray.setOnExit([&] { PostMessageW(win.hwnd(), WM_DESTROY, 0, 0); });
+
+    // License info dialog (stack-allocated; lives for full session lifetime).
+    // Passes manager pointer so Render() calls Snapshot() for thread-safety (C1).
+    LicenseInfoDialog licInfoDlg(&licenseManager);
+    tray.setOnLicenseInfo([&] { licInfoDlg.Open(); });
+
     win.attachTray(&tray);
     win.setTarget(target);
 
-    // Global hotkey F8 -> toggle AUTO.
+    // Global hotkeys.
     HotkeyManager hk;
     hk.registerKey(win.hwnd(), 1, 0, VK_F8, [&] { win.toggleCombatRequested(); });
     hk.registerKey(win.hwnd(), 2, 0, VK_F9, [&] { win.toggleBuffRequested(); });
@@ -256,13 +299,57 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     // Session lock notification.
     WTSRegisterSessionNotification(win.hwnd(), NOTIFY_FOR_THIS_SESSION);
 
+    // License-lost overlay state — rendered each frame via the frame overlay hook.
+    bool  licLostActive   = false;
+    float licLostCountdown = 30.0f;
+
+    // Frame overlay: renders license info dialog + license-lost toast on top of
+    // the settings panel without modifying drawSettingsPanel().
+    win.setOnFrameOverlay([&] {
+        // License info popup (tray-triggered).
+        licInfoDlg.Render();
+
+        // Check for mid-session revoke/expire (atomic, zero-cost when not lost).
+        if (!licLostActive && licenseManager.LicenseLost()) {
+            licLostActive    = true;
+            licLostCountdown = 30.0f;
+            LOG_INFO("License lost mid-session — 30s shutdown countdown started");
+        }
+
+        // Toast overlay shown until countdown reaches zero.
+        if (licLostActive) {
+            ImGuiIO& io = ImGui::GetIO();
+            ImGui::SetNextWindowPos(
+                ImVec2(io.DisplaySize.x * 0.5f, 10.0f),
+                ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+            ImGui::SetNextWindowBgAlpha(0.88f);
+            ImGui::Begin("##LicLost", nullptr,
+                         ImGuiWindowFlags_NoDecoration |
+                         ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_NoFocusOnAppearing |
+                         ImGuiWindowFlags_NoNav |
+                         ImGuiWindowFlags_NoMove);
+            ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f),
+                               "%s", licenseManager.LicenseLostReason().c_str());
+            ImGui::Text("Dong app sau %.0f giay...", licLostCountdown);
+            ImGui::End();
+
+            licLostCountdown -= io.DeltaTime;
+            if (licLostCountdown <= 0.0f) {
+                PostMessageW(win.hwnd(), WM_DESTROY, 0, 0);
+            }
+        }
+    });
+
     LOG_INFO("WindowHelper ready");
     int rc = win.runLoop();
 
-    // Cleanup.
+    // Cleanup in reverse init order.
     WTSUnRegisterSessionNotification(win.hwnd());
     hk.unregisterAll();
     tray.uninstall();
+    licenseManager.Stop();
     ticking.store(false);
     if (tickTh.joinable()) tickTh.join();
     pipe.stop();

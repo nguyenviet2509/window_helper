@@ -520,6 +520,8 @@ void MainWindow::renderFrame() {
     ImGui::NewFrame();
     drawSettingsPanel();
     calibration_.draw(draft_.vision, [this]() { markDirty(); });
+    // Frame overlay: license info dialog, toast notifications, etc.
+    if (onFrameOverlay_) onFrameOverlay_();
     ImGui::Render();
 
     // Auto-fit chiều cao OS window theo content main panel (calibration là
@@ -551,6 +553,20 @@ void MainWindow::renderFrame() {
 
 void MainWindow::requestClose() {
     if (hwnd_) PostMessageW(hwnd_, WM_CLOSE, 0, 0);
+}
+
+void MainWindow::renderActivationFrame(std::function<void()> overlay) {
+    applyPendingResize();
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+    if (overlay) overlay();
+    ImGui::Render();
+    const float clear[4] = { 0.12f, 0.12f, 0.14f, 1.0f };
+    dx_->ctx->OMSetRenderTargets(1, dx_->rtv.GetAddressOf(), nullptr);
+    dx_->ctx->ClearRenderTargetView(dx_->rtv.Get(), clear);
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+    dx_->swap->Present(1, 0);
 }
 
 void MainWindow::toggleCombatRequested() {

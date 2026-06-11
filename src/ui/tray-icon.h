@@ -13,14 +13,15 @@ public:
     void uninstall();
     void onMessage(WPARAM wp, LPARAM lp);
 
-    void setOnToggleAuto(std::function<void()> cb)  { onToggleAuto_ = std::move(cb); }
-    void setOnShowWindow(std::function<void()> cb)  { onShowWindow_ = std::move(cb); }
-    void setOnExit(std::function<void()> cb)        { onExit_ = std::move(cb); }
+    void setOnToggleAuto(std::function<void()> cb)     { onToggleAuto_ = std::move(cb); }
+    void setOnShowWindow(std::function<void()> cb)     { onShowWindow_ = std::move(cb); }
+    void setOnExit(std::function<void()> cb)           { onExit_ = std::move(cb); }
+    void setOnLicenseInfo(std::function<void()> cb)    { onLicenseInfo_ = std::move(cb); }
 
 private:
     NOTIFYICONDATAW nid_{};
     HWND owner_ = nullptr;
-    std::function<void()> onToggleAuto_, onShowWindow_, onExit_;
+    std::function<void()> onToggleAuto_, onShowWindow_, onExit_, onLicenseInfo_;
 
     void showContextMenu();
 };

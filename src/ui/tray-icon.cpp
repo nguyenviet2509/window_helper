@@ -1,6 +1,6 @@
 #include "tray-icon.h"
 
-namespace { enum { kMenuToggleAuto = 1, kMenuShow, kMenuExit }; }
+namespace { enum { kMenuLicenseInfo = 1, kMenuToggleAuto, kMenuShow, kMenuExit }; }
 
 void TrayIcon::install(HWND owner, HICON icon, const wchar_t* tooltip) {
     owner_ = owner;
@@ -28,10 +28,12 @@ void TrayIcon::onMessage(WPARAM /*wp*/, LPARAM lp) {
 
 void TrayIcon::showContextMenu() {
     HMENU m = CreatePopupMenu();
-    AppendMenuW(m, MF_STRING, kMenuToggleAuto, L"Bật/Tắt AUTO");
-    AppendMenuW(m, MF_STRING, kMenuShow,       L"Hiện cửa sổ");
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, kMenuExit,       L"Thoát");
+    AppendMenuW(m, MF_STRING,    kMenuLicenseInfo, L"License Info...");
+    AppendMenuW(m, MF_SEPARATOR, 0,                nullptr);
+    AppendMenuW(m, MF_STRING,    kMenuToggleAuto,  L"Bật/Tắt AUTO");
+    AppendMenuW(m, MF_STRING,    kMenuShow,        L"Hiện cửa sổ");
+    AppendMenuW(m, MF_SEPARATOR, 0,                nullptr);
+    AppendMenuW(m, MF_STRING,    kMenuExit,        L"Thoát");
 
     POINT p; GetCursorPos(&p);
     SetForegroundWindow(owner_);
@@ -39,9 +41,10 @@ void TrayIcon::showContextMenu() {
     DestroyMenu(m);
 
     switch (cmd) {
-    case kMenuToggleAuto: if (onToggleAuto_) onToggleAuto_(); break;
-    case kMenuShow:       if (onShowWindow_) onShowWindow_(); break;
-    case kMenuExit:       if (onExit_)       onExit_();       break;
+    case kMenuLicenseInfo: if (onLicenseInfo_) onLicenseInfo_(); break;
+    case kMenuToggleAuto:  if (onToggleAuto_)  onToggleAuto_();  break;
+    case kMenuShow:        if (onShowWindow_)  onShowWindow_();  break;
+    case kMenuExit:        if (onExit_)        onExit_();        break;
     default: break;
     }
 }

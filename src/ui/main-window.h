@@ -22,6 +22,10 @@ public:
     int  runLoop();                              // returns WM_QUIT wParam
     void requestClose();
 
+    // Render a single ImGui frame calling only the provided overlay (e.g. activation
+    // dialog). Used by the license gate loop before the main pipeline is started.
+    void renderActivationFrame(std::function<void()> overlay);
+
     // Callbacks fired from UI thread (e.g. AUTO toggle).
     void setOnCombatToggle(std::function<void(bool)> cb) { onCombatToggle_ = std::move(cb); }
     void setOnBuffToggle(std::function<void(bool)> cb) { onBuffToggle_ = std::move(cb); }
@@ -36,6 +40,8 @@ public:
     void setTarget(HWND target) { target_ = target; }
     void setOnExit(std::function<void()> cb) { onExit_ = std::move(cb); }
     void setOnSessionLockChange(std::function<void(bool)> cb) { onSessionLock_ = std::move(cb); }
+    // Called each frame after drawSettingsPanel() — use for overlay popups (license info, toasts).
+    void setOnFrameOverlay(std::function<void()> cb) { onFrameOverlay_ = std::move(cb); }
 
     // Toggle the combat flag from any thread (UI marshals via PostMessage).
     void toggleCombatRequested();
@@ -75,6 +81,7 @@ private:
     std::function<void(const AppConfig&)> onConfigChanged_;
     std::function<void()> onExit_;
     std::function<void(bool)> onSessionLock_;
+    std::function<void()> onFrameOverlay_;
 public:
     void notifySessionLock(bool locked) { if (onSessionLock_) onSessionLock_(locked); }
     void onResize(unsigned w, unsigned h);

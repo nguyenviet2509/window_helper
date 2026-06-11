@@ -28,7 +28,9 @@ add_executable(WindowHelper WIN32
     ui/calibration-window.cpp
     ui/tray-icon.cpp
     ui/activation-dialog.cpp
+    ui/license-info-dialog.cpp
     license/hwid-collector.cpp
+    license/license-manager.cpp
     license/ed25519-verify.cpp
     license/license-client.cpp
     license/license-cache.cpp

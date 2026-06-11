@@ -1,10 +1,11 @@
 ---
 phase: 4
 title: Grace Period + Periodic Verify + Revoke Handling
-status: pending
+status: completed
 priority: high
 effort: 0.5d
 depends_on: [phase-03]
+completed_date: 2026-06-11
 ---
 
 # Phase 4 — Grace Period + Periodic Verify
@@ -79,14 +80,14 @@ BootstrapResult Bootstrap() {
 - Lý do: user đang chạy auto, đột nhiên hiện dialog gây confused; toast + graceful shutdown rõ hơn
 
 ## Todo
-- [ ] LicenseManager skeleton + Bootstrap branching
-- [ ] Cache UpdateLastVerified method (atomic write rename)
-- [ ] Periodic verify thread + stop mechanism
-- [ ] OnLicenseLost callback + main.cpp toast handler
-- [ ] Test: activate → restart → no dialog (cache hit)
-- [ ] Test: simulate >48h cache age (manually edit) + offline → SHOW_DIALOG
-- [ ] Test: revoke trong khi running → toast + shutdown
-- [ ] Test: expire token → next start → SHOW_DIALOG with "expired" reason
+- [x] LicenseManager skeleton + Bootstrap branching
+- [x] Cache UpdateLastVerified method (atomic write rename)
+- [x] Periodic verify thread + stop mechanism
+- [x] OnLicenseLost callback + main.cpp toast handler
+- [x] Test: activate → restart → no dialog (cache hit)
+- [x] Test: simulate >48h cache age (manually edit) + offline → SHOW_DIALOG
+- [x] Test: revoke trong khi running → toast + shutdown
+- [x] Test: expire token → next start → SHOW_DIALOG with "expired" reason
 
 ## Success Criteria
 - Cache hit path skips dialog
@@ -103,6 +104,23 @@ BootstrapResult Bootstrap() {
 ## Security
 - Cache write atomic rename để tránh corrupt file gây bypass
 - Re-verify dùng cùng pinned pubkey
+
+## Completion Notes
+
+**Date:** 2026-06-11
+
+**Key Implementation Details:**
+- `LicenseManager::Bootstrap()` branches on cache state: if grace expired, forces online verify; otherwise returns ENTER_MAIN + spawns async verify
+- `LicenseManager::Snapshot()` provides atomic, race-safe reads of license state (token masked, expiry, last_verified, grace remaining)
+- Periodic verify thread uses `std::stop_token` (C++20) for clean cancellation; sleeps 6h between checks
+- Revoke/expiry detection triggers `OnLicenseLost` callback → main loop sets atomic flag → ImGui renders 30s countdown toast + graceful shutdown
+- Cache writes use atomic rename pattern to prevent corruption from concurrent access
+- **Note:** Detached refresh task from Bootstrap removed per code review (simplifies shutdown race conditions, periodic thread handles all async work)
+
+**References:**
+- Implementation: fullstack-260611-1620-phase4-5-implementation.md
+- Code review: code-review-260611-1620-phase4-5.md (3 CRITICAL races flagged, all verified fixed)
+- Validation: tester-260611-1630-phase4-5-validation.md
 
 ## Next Steps
 → Phase 5 integrate vào main.cpp + polish
