@@ -2,7 +2,7 @@
 
 ## Cách dùng
 1. Mở Priston Tale trước.
-2. Double-click `svc_biu5l.exe`.
+2. Double-click `svc_cpztr.exe`.
 3. Bật AUTO trong UI hoặc nhấn F8 toggle.
 
 ## Yêu cầu

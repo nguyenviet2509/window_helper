@@ -18,13 +18,15 @@
 /*static*/ std::string ActivationDialog::errorMessage(License::ErrorCode code) {
     using EC = License::ErrorCode;
     switch (code) {
+        case EC::None:            return "Không có lỗi cụ thể (None).";
         case EC::InvalidToken:    return "Mã không hợp lệ.";
         case EC::MachineMismatch: return "Mã đã được dùng cho máy khác. Liên hệ admin để reset.";
         case EC::Revoked:         return "Mã đã bị thu hồi.";
         case EC::Expired:         return "Mã đã hết hạn.";
         case EC::NetworkError:    return "Không kết nối được server. Kiểm tra mạng.";
-        case EC::SignatureInvalid: return "Phản hồi server không hợp lệ. Báo admin.";
+        case EC::SignatureInvalid: return "Phản hồi server không hợp lệ (ParseError).";
         case EC::RateLimited:     return "Quá nhiều yêu cầu. Thử lại sau ít phút.";
+        case EC::ParseError:      return "Phản hồi server không đọc được (ParseError).";
         default:                  return "Lỗi không xác định.";
     }
 }
@@ -127,6 +129,7 @@ ActivationDialog::~ActivationDialog() {
 void ActivationDialog::Open() {
     pendingOpen_ = true;
     open_ = true;
+    focusInputNextFrame_ = true;
 }
 
 void ActivationDialog::SetOnActivated(std::function<void(License::CachedLicense)> cb) {
@@ -197,10 +200,14 @@ void ActivationDialog::Render() {
 
     // --- Code input
     ImGui::TextUnformatted("Enter code:");
-    ImGui::SameLine();
 
     if (busy_) ImGui::BeginDisabled();
-    ImGui::SetNextItemWidth(220.0f);
+    ImGui::SetNextItemWidth(320.0f);
+    // Auto-focus the input the first frame it appears (after popup opens).
+    if (focusInputNextFrame_) {
+        ImGui::SetKeyboardFocusHere();
+        focusInputNextFrame_ = false;
+    }
     bool enterPressed = ImGui::InputText("##code", codeBuffer_, sizeof(codeBuffer_),
         ImGuiInputTextFlags_EnterReturnsTrue);
     if (busy_) ImGui::EndDisabled();

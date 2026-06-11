@@ -28,8 +28,10 @@ void TrayIcon::onMessage(WPARAM /*wp*/, LPARAM lp) {
 
 void TrayIcon::showContextMenu() {
     HMENU m = CreatePopupMenu();
+#ifdef WH_REQUIRE_LICENSE
     AppendMenuW(m, MF_STRING,    kMenuLicenseInfo, L"License Info...");
     AppendMenuW(m, MF_SEPARATOR, 0,                nullptr);
+#endif
     AppendMenuW(m, MF_STRING,    kMenuToggleAuto,  L"Bật/Tắt AUTO");
     AppendMenuW(m, MF_STRING,    kMenuShow,        L"Hiện cửa sổ");
     AppendMenuW(m, MF_SEPARATOR, 0,                nullptr);

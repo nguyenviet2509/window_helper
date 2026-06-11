@@ -141,7 +141,9 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     }
 
     // ===== LICENSE GATE (Phase 4-5) =====
-    // Bootstrap: load encrypted cache → verify grace period → ENTER_MAIN | SHOW_DIALOG
+    // Compiled in only when WH_REQUIRE_LICENSE is defined (distribution builds).
+    // Dev builds skip this block entirely — no dialog, no periodic verify.
+#ifdef WH_REQUIRE_LICENSE
     License::LicenseManager licenseManager;
     License::BootstrapResult licenseBootstrap = licenseManager.Bootstrap();
 
@@ -181,6 +183,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     }
 
     licenseManager.StartPeriodicVerify();
+#endif // WH_REQUIRE_LICENSE
     // ===== END LICENSE GATE =====
 
     // Input + gate + scheduler.
@@ -212,7 +215,9 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     WgcCapture cap;
     if (!cap.start(target)) {
         MessageBoxW(nullptr, L"WGC capture failed.", L"WindowHelper", MB_ICONERROR);
+#ifdef WH_REQUIRE_LICENSE
         licenseManager.Stop();
+#endif
         sched.stop(); Logger::instance().close();
         return 2;
     }
@@ -282,10 +287,12 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     });
     tray.setOnExit([&] { PostMessageW(win.hwnd(), WM_DESTROY, 0, 0); });
 
+#ifdef WH_REQUIRE_LICENSE
     // License info dialog (stack-allocated; lives for full session lifetime).
     // Passes manager pointer so Render() calls Snapshot() for thread-safety (C1).
     LicenseInfoDialog licInfoDlg(&licenseManager);
     tray.setOnLicenseInfo([&] { licInfoDlg.Open(); });
+#endif
 
     win.attachTray(&tray);
     win.setTarget(target);
@@ -299,8 +306,9 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     // Session lock notification.
     WTSRegisterSessionNotification(win.hwnd(), NOTIFY_FOR_THIS_SESSION);
 
+#ifdef WH_REQUIRE_LICENSE
     // License-lost overlay state — rendered each frame via the frame overlay hook.
-    bool  licLostActive   = false;
+    bool  licLostActive    = false;
     float licLostCountdown = 30.0f;
 
     // Frame overlay: renders license info dialog + license-lost toast on top of
@@ -341,6 +349,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
             }
         }
     });
+#endif // WH_REQUIRE_LICENSE
 
     LOG_INFO("WindowHelper ready");
     int rc = win.runLoop();
@@ -349,7 +358,9 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     WTSUnRegisterSessionNotification(win.hwnd());
     hk.unregisterAll();
     tray.uninstall();
+#ifdef WH_REQUIRE_LICENSE
     licenseManager.Stop();
+#endif
     ticking.store(false);
     if (tickTh.joinable()) tickTh.join();
     pipe.stop();

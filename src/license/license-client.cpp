@@ -243,37 +243,52 @@ ActivationResult LicenseClient::PostActivate(const std::string& token,
         return res;
     }
 
+    // Server contract (phase 2): payload là canonical STRING `token_hash|machine_id|expires_at|issued_at`,
+    // signed là base64 Ed25519 sig over đúng bytes của canonical string đó.
     std::string sigB64;
-    nlohmann::json payload;
+    std::string canonical;
     try {
-        sigB64  = j.at("signed").get<std::string>();
-        payload = j.at("payload");
+        sigB64    = j.at("signed").get<std::string>();
+        canonical = j.at("payload").get<std::string>();
     } catch (...) {
         res.error = ErrorCode::ParseError;
         return res;
     }
 
-    // Build SignedPayload for verification
+    // Parse canonical string bằng cách split theo '|' (4 trường).
     SignedPayload sp;
-    try {
-        sp.token_hash = payload.at("token_hash").get<std::string>();
-        sp.machine_id = payload.at("machine_id").get<std::string>();
-        sp.expires_at = payload.value("expires_at", int64_t(0));
-        sp.issued_at  = payload.at("issued_at").get<int64_t>();
-    } catch (...) {
-        res.error = ErrorCode::ParseError;
-        return res;
+    {
+        std::vector<std::string> parts;
+        size_t start = 0, pos = 0;
+        while ((pos = canonical.find('|', start)) != std::string::npos) {
+            parts.emplace_back(canonical.substr(start, pos - start));
+            start = pos + 1;
+        }
+        parts.emplace_back(canonical.substr(start));
+        if (parts.size() != 4) { res.error = ErrorCode::ParseError; return res; }
+        try {
+            sp.token_hash = parts[0];
+            sp.machine_id = parts[1];
+            sp.expires_at = std::stoll(parts[2]);
+            sp.issued_at  = std::stoll(parts[3]);
+        } catch (...) { res.error = ErrorCode::ParseError; return res; }
     }
 
-    // Cross-check token_hash
+    // Cross-check token_hash so với SHA-256(token) client tính lại.
     std::string expectedHash = sha256Hex(token);
     if (expectedHash.empty() || sp.token_hash != expectedHash) {
         res.error = ErrorCode::SignatureInvalid;
         return res;
     }
 
-    // Verify Ed25519 signature — reject nếu fail
-    if (!verifySig(sp, sigB64)) {
+    // Verify Ed25519 trực tiếp trên canonical string bytes (không reconstruct).
+    auto sigBytes = base64Decode(sigB64);
+    if (sigBytes.size() != 64) {
+        res.error = ErrorCode::SignatureInvalid;
+        return res;
+    }
+    auto* msg = reinterpret_cast<const uint8_t*>(canonical.data());
+    if (!VerifySignature(msg, canonical.size(), sigBytes.data(), kServerPubKey)) {
         res.error = ErrorCode::SignatureInvalid;
         return res;
     }

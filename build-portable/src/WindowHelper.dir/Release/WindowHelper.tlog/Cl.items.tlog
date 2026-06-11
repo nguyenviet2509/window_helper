@@ -3,6 +3,7 @@ D:\Vietnt\Game\window_helper\src\capture\wgc-capture.cpp;D:\Vietnt\Game\window_h
 D:\Vietnt\Game\window_helper\src\vision\vision-pipeline.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\vision-pipeline.obj
 D:\Vietnt\Game\window_helper\src\vision\bar-detector.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\bar-detector.obj
 D:\Vietnt\Game\window_helper\src\vision\waterline.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\waterline.obj
+D:\Vietnt\Game\window_helper\src\vision\hue-sampler.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\hue-sampler.obj
 D:\Vietnt\Game\window_helper\src\input\postmessage-backend.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\postmessage-backend.obj
 D:\Vietnt\Game\window_helper\src\input\send-input-backend.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\send-input-backend.obj
 D:\Vietnt\Game\window_helper\src\input\input-scheduler.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\input-scheduler.obj
@@ -18,4 +19,12 @@ D:\Vietnt\Game\window_helper\src\combat\pot-refill-scheduler.cpp;D:\Vietnt\Game\
 D:\Vietnt\Game\window_helper\src\dispatch\action-dispatcher.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\action-dispatcher.obj
 D:\Vietnt\Game\window_helper\src\config\config-loader.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\config-loader.obj
 D:\Vietnt\Game\window_helper\src\ui\main-window.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\main-window.obj
+D:\Vietnt\Game\window_helper\src\ui\calibration-window.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\calibration-window.obj
 D:\Vietnt\Game\window_helper\src\ui\tray-icon.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\tray-icon.obj
+D:\Vietnt\Game\window_helper\src\ui\activation-dialog.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\activation-dialog.obj
+D:\Vietnt\Game\window_helper\src\ui\license-info-dialog.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\license-info-dialog.obj
+D:\Vietnt\Game\window_helper\src\license\hwid-collector.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\hwid-collector.obj
+D:\Vietnt\Game\window_helper\src\license\license-manager.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\license-manager.obj
+D:\Vietnt\Game\window_helper\src\license\ed25519-verify.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\ed25519-verify.obj
+D:\Vietnt\Game\window_helper\src\license\license-client.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\license-client.obj
+D:\Vietnt\Game\window_helper\src\license\license-cache.cpp;D:\Vietnt\Game\window_helper\build-portable\src\WindowHelper.dir\Release\license-cache.obj

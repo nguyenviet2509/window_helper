@@ -61,6 +61,7 @@ private:
     bool  busy_ = false;
     bool  open_ = false;
     bool  pendingOpen_ = false;   // set by Open(), consumed first frame
+    bool  focusInputNextFrame_ = false;  // auto-focus token input when popup opens
 
     // Worker thread state — written by worker, read by Render() (UI thread).
     std::thread                            workerThread_;

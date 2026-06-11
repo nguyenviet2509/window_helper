@@ -51,6 +51,14 @@ target_link_libraries(WindowHelper PRIVATE
 
 target_compile_definitions(WindowHelper PRIVATE _WIN32_WINNT=0x0A00)
 
+option(WH_REQUIRE_LICENSE "Enforce license activation gate at runtime" OFF)
+if(WH_REQUIRE_LICENSE)
+    target_compile_definitions(WindowHelper PRIVATE WH_REQUIRE_LICENSE)
+    message(STATUS "WH_REQUIRE_LICENSE = ON  (license gate active)")
+else()
+    message(STATUS "WH_REQUIRE_LICENSE = OFF (dev build — no license gate)")
+endif()
+
 # OUTPUT_NAME random theo timestamp build để né Xingcode3 file-name signature.
 # User có thể override bằng -DWH_OUTPUT_NAME=foo.
 if(NOT DEFINED WH_OUTPUT_NAME)

@@ -1,4 +1,4 @@
-# package.ps1 — Build portable static exe + đóng gói zip để share.
+﻿# package.ps1 — Build portable static exe + đóng gói zip để share.
 # Usage: .\package.ps1                       (build + package)
 #        .\package.ps1 -SkipBuild            (chỉ package từ build hiện tại)
 #        .\package.ps1 -OutDir D:\release    (custom output dir)
@@ -16,13 +16,9 @@ if (-not (Test-Path $cmake)) { $cmake = (Get-Command cmake.exe -ErrorAction Sile
 if (-not $cmake) { Write-Error "cmake.exe không tìm thấy"; exit 1 }
 
 if (-not $SkipBuild) {
-    Write-Host "[1/4] Configure portable preset..." -ForegroundColor Cyan
-    if (-not (Test-Path "build-portable\CMakeCache.txt")) {
-        & $cmake --preset portable
-        if ($LASTEXITCODE -ne 0) { Write-Error "Configure failed"; exit 1 }
-    } else {
-        Write-Host "      (đã configure trước đó, skip)"
-    }
+    Write-Host "[1/4] Configure portable preset (always re-configure for clean flag state)..." -ForegroundColor Cyan
+    & $cmake --preset portable
+    if ($LASTEXITCODE -ne 0) { Write-Error "Configure failed"; exit 1 }
 
     Write-Host "[2/4] Build static exe..." -ForegroundColor Cyan
     & $cmake --build build-portable --config Release --target WindowHelper
@@ -83,3 +79,4 @@ Write-Host "  Folder:  $OutDir\ ($((Get-ChildItem $OutDir).Count) files)"
 Write-Host "  Zip:     $zipName ($zipSize MB)"
 Write-Host ""
 Write-Host "Gửi $zipName cho user. Họ extract -> chạy $($exe.Name) -> xong." -ForegroundColor Cyan
+Write-Host "License enforcement: ENABLED (WH_REQUIRE_LICENSE=ON via portable preset)" -ForegroundColor Magenta
