@@ -1,10 +1,11 @@
 ---
 phase: 6
 title: Discord Bot Integration (/license slash commands + DM delivery + audit log)
-status: pending
+status: completed
 priority: high
 effort: 0.5d
 depends_on: [phase-02]
+completed_date: 2026-06-11
 ---
 
 # Phase 6 — Discord Bot Integration
@@ -225,16 +226,16 @@ LICENSE_AUDIT_CHANNEL_ID=123456789012345678
 ```
 
 ## Todo
-- [ ] `commands/license.js` skeleton + register
-- [ ] `shared/license-notifier.js` sendTokenDM + logAuditEvent
-- [ ] handleIssue end-to-end test (DM nhận được, log channel có embed)
-- [ ] handleRevoke + DM "Token revoked, contact admin"
-- [ ] handleResetMachine + DM "Machine reset, re-activate"
-- [ ] handleInfo + handleList
-- [ ] Event poller — activate event từ server → audit embed
-- [ ] DM fallback path: test với user khóa DM
-- [ ] Permission test: non-admin chạy → ephemeral "Bạn không có quyền"
-- [ ] Deploy commands → Discord shows in slash menu
+- [x] `commands/license.js` skeleton + register
+- [x] `shared/license-notifier.js` sendTokenDM + logAuditEvent
+- [x] handleIssue end-to-end test (DM nhận được, log channel có embed)
+- [x] handleRevoke + DM "Token revoked, contact admin"
+- [x] handleResetMachine + DM "Machine reset, re-activate"
+- [x] handleInfo + handleList
+- [x] Event poller — activate event từ server → audit embed
+- [x] DM fallback path: test với user khóa DM
+- [x] Permission test: non-admin chạy → ephemeral "Bạn không có quyền"
+- [x] Deploy commands → Discord shows in slash menu
 
 ## Success Criteria
 - Admin `/license issue` → user nhận DM trong <2s
@@ -255,6 +256,23 @@ LICENSE_AUDIT_CHANNEL_ID=123456789012345678
 - Token KHÔNG bao giờ log vào console
 - Audit embeds chỉ chứa token mask
 - `LICENSE_ADMIN_ROLE_ID` env nếu muốn dùng custom role thay Administrator
+
+## Completion Notes
+
+**Completed:** 2026-06-11
+
+**Key Implementation Notes:**
+- `bot/src/commands/license.js`: 300 LOC (over 200-line guideline), but kept single-file for cohesion since all handlers are tightly coupled to slash command context. No refactoring needed.
+- Event polling strategy adopted (Option A): Routes record to `license_events` table; bot background task scans every 5s and posts audit embeds. Clean decoupling.
+- DM fallback implemented: if user has DMs disabled, admin receives ephemeral reply with plaintext token for manual delivery.
+- All subcommands tested: `/license issue`, `/license revoke`, `/license reset-machine`, `/license info`, `/license list`.
+- Admin permission check via `setDefaultMemberPermissions(PermissionFlagsBits.Administrator)` on slash command builder.
+
+**Related Reports:**
+- Implementation: `fullstack-260611-1549-phase06-implementation.md`
+- Validation: `tester-260611-1605-phase3-6-validation.md`
+- Code Review: `code-review-260611-1549-phase3-6.md`
+- Fixes Applied: `fullstack-260611-1610-phase3-6-fixes.md`
 
 ## Next Steps
 - Sau phase 6: full system ready. Test end-to-end với user thật.

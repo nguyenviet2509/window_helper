@@ -4,6 +4,7 @@
   "dependencies": [
     "opencv4",
     "nlohmann-json",
+    "libsodium",
     {
       "name": "imgui",
       "features": ["dx11-binding", "win32-binding"]

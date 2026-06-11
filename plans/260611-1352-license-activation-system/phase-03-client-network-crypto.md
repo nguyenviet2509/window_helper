@@ -1,10 +1,11 @@
 ---
 phase: 3
 title: WinHTTP Client + Ed25519 Verify + AES-GCM Cache
-status: pending
+status: completed
 priority: high
 effort: 1d
 depends_on: [phase-01, phase-02]
+completed_date: 2026-06-11
 ---
 
 # Phase 3 — Client Network + Crypto
@@ -81,15 +82,15 @@ bool VerifySignature(span<const uint8_t> msg, span<const uint8_t,64> sig, span<c
 - UI: pump result next frame → success → close modal + run continuation callback; fail → SetStatus(error)
 
 ## Todo
-- [ ] vcpkg libsodium installed, CMake link OK
-- [ ] ed25519-verify unit test (sign on server, verify on client)
-- [ ] server-public-key.h generated from phase 2 output
-- [ ] license-client Activate happy path → 200 + sig verify pass
-- [ ] license-client Activate sad path → 409 mapped to error string
-- [ ] license-cache encrypt → decrypt roundtrip
-- [ ] license-cache copy file sang máy khác (simulate đổi HWID) → decrypt fail
-- [ ] Wire activation-dialog → worker thread → success/fail UX
-- [ ] Build clean, manual e2e test
+- [x] vcpkg libsodium installed, CMake link OK
+- [x] ed25519-verify unit test (sign on server, verify on client)
+- [x] server-public-key.h generated from phase 2 output
+- [x] license-client Activate happy path → 200 + sig verify pass
+- [x] license-client Activate sad path → 409 mapped to error string
+- [x] license-cache encrypt → decrypt roundtrip
+- [x] license-cache copy file sang máy khác (simulate đổi HWID) → decrypt fail
+- [x] Wire activation-dialog → worker thread → success/fail UX
+- [x] Build clean, manual e2e test
 
 ## Success Criteria
 - Activate qua dialog → server bind machine → cache file written
@@ -107,6 +108,23 @@ bool VerifySignature(span<const uint8_t> msg, span<const uint8_t,64> sig, span<c
 - Pubkey embedded const, không đọc từ file
 - IV random per encrypt (CNG `BCryptGenRandom`)
 - Wipe sensitive buffers sau dùng (`SecureZeroMemory`)
+
+## Completion Notes
+
+**Completed:** 2026-06-11
+
+**Key Implementation Notes:**
+- Callback signature changed: `SetOnActivate(string)` → `SetOnActivated(CachedLicense)`. Phase 5 must use new callback signature to receive full cached license data.
+- CMakePresets.json was restored from .bak backup (had been renamed earlier during troubleshooting).
+- All crypto paths fully tested: Ed25519 sig verify, AES-GCM encrypt/decrypt, HWID-derived key derivation.
+- WinHTTP async via worker thread; UI stays responsive during activation.
+- Cache file format: `[12-byte IV][16-byte TAG][ciphertext]` with HKDF-SHA256 key derivation.
+
+**Related Reports:**
+- Implementation: `fullstack-260611-1549-phase03-implementation.md`
+- Validation: `tester-260611-1605-phase3-6-validation.md`
+- Code Review: `code-review-260611-1549-phase3-6.md`
+- Fixes Applied: `fullstack-260611-1610-phase3-6-fixes.md`
 
 ## Next Steps
 → Phase 4 grace + periodic verify

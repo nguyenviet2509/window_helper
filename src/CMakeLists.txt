@@ -1,6 +1,7 @@
 find_package(OpenCV CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(unofficial-sodium CONFIG REQUIRED)
 
 add_executable(WindowHelper WIN32
     main.cpp
@@ -28,6 +29,9 @@ add_executable(WindowHelper WIN32
     ui/tray-icon.cpp
     ui/activation-dialog.cpp
     license/hwid-collector.cpp
+    license/ed25519-verify.cpp
+    license/license-client.cpp
+    license/license-cache.cpp
     resources/version.rc
 )
 
@@ -38,8 +42,10 @@ target_link_libraries(WindowHelper PRIVATE
     nlohmann_json::nlohmann_json
     imgui::imgui
     user32 gdi32 d3d11 dxgi dxguid windowsapp runtimeobject wtsapi32 shell32 comctl32
-    iphlpapi bcrypt
+    iphlpapi bcrypt winhttp
+    unofficial-sodium::sodium
 )
+# unofficial-sodium::sodium is the vcpkg target name for libsodium
 
 target_compile_definitions(WindowHelper PRIVATE _WIN32_WINNT=0x0A00)
 

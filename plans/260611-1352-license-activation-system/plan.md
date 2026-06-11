@@ -26,10 +26,10 @@ Gate WindowHelper.exe behind per-machine token; manage from existing Node/Expres
 |---|---|---|---|
 | 1 | HWID collector + ImGui activation dialog skeleton | completed | [phase-01-hwid-and-dialog.md](phase-01-hwid-and-dialog.md) |
 | 2 | Server endpoints + DB schema + admin UI tab | completed | [phase-02-server-and-admin.md](phase-02-server-and-admin.md) |
-| 3 | WinHTTP client + Ed25519 verify + AES cache | pending | [phase-03-client-network-crypto.md](phase-03-client-network-crypto.md) |
+| 3 | WinHTTP client + Ed25519 verify + AES cache | completed | [phase-03-client-network-crypto.md](phase-03-client-network-crypto.md) |
 | 4 | Grace period + periodic verify + revoke handling | pending | [phase-04-grace-and-revoke.md](phase-04-grace-and-revoke.md) |
 | 5 | Integrate main.cpp gate + tray status + polish | pending | [phase-05-integration-polish.md](phase-05-integration-polish.md) |
-| 6 | Discord bot integration (/license slash commands + DM + audit log) | pending | [phase-06-discord-bot-integration.md](phase-06-discord-bot-integration.md) |
+| 6 | Discord bot integration (/license slash commands + DM + audit log) | completed | [phase-06-discord-bot-integration.md](phase-06-discord-bot-integration.md) |
 
 ## Key Dependencies
 - vcpkg: `libsodium` (Ed25519) — or embed Monocypher header-only
@@ -47,7 +47,7 @@ Gate WindowHelper.exe behind per-machine token; manage from existing Node/Expres
 
 ## Open Questions
 1. ~~DB stack~~ → **RESOLVED: SQLite via shared/db.js**
-2. Server URL production hardcode vào C++? (Railway domain hay domain riêng?) **PENDING**
+2. Server URL production hardcode vào C++? → **RESOLVED: https://vietnt.io.vn hardcoded**
 3. ~~Token format~~ → **RESOLVED: 32-hex used**
 4. ~~Hard exit vs demo-mode~~ → **RESOLVED: hard exit**
 5. ~~Crypto lib~~ → **RESOLVED: libsodium (libsodium via tweetnacl client-side phase 3)**

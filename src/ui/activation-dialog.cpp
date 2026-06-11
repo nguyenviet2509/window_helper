@@ -1,13 +1,33 @@
-// activation-dialog.cpp — ImGui modal gate for license activation.
-// No network logic — callbacks wired externally (phase 3).
+// activation-dialog.cpp — ImGui modal + worker-thread activation (phase 3).
+// Activation flow: UI thread → spawns std::thread → LicenseClient::Activate
+// → result posted back via atomic flag → UI thread polls and handles result.
 
 #include "activation-dialog.h"
 #include "../license/hwid-collector.h"
+#include "../license/license-client.h"
+#include "../license/license-cache.h"
 
 #include <windows.h>
 #include "imgui.h"
 #include <string>
 #include <algorithm>
+#include <ctime>
+
+// ---- Vietnamese error messages ----------------------------------------------
+
+/*static*/ std::string ActivationDialog::errorMessage(License::ErrorCode code) {
+    using EC = License::ErrorCode;
+    switch (code) {
+        case EC::InvalidToken:    return "Mã không hợp lệ.";
+        case EC::MachineMismatch: return "Mã đã được dùng cho máy khác. Liên hệ admin để reset.";
+        case EC::Revoked:         return "Mã đã bị thu hồi.";
+        case EC::Expired:         return "Mã đã hết hạn.";
+        case EC::NetworkError:    return "Không kết nối được server. Kiểm tra mạng.";
+        case EC::SignatureInvalid: return "Phản hồi server không hợp lệ. Báo admin.";
+        case EC::RateLimited:     return "Quá nhiều yêu cầu. Thử lại sau ít phút.";
+        default:                  return "Lỗi không xác định.";
+    }
+}
 
 // ---- clipboard helper -------------------------------------------------------
 
@@ -15,7 +35,6 @@ void ActivationDialog::copyFullIdToClipboard() {
     std::string full = License::HwidFull();
     if (full.empty()) return;
 
-    // Chuyển sang wstring để dùng CF_UNICODETEXT
     std::wstring wfull(full.begin(), full.end());
     size_t byteLen = (wfull.size() + 1) * sizeof(wchar_t);
 
@@ -31,16 +50,76 @@ void ActivationDialog::copyFullIdToClipboard() {
         EmptyClipboard();
         SetClipboardData(CF_UNICODETEXT, hMem);
         CloseClipboard();
-        // hMem is now owned by the clipboard — do NOT free
     } else {
         GlobalFree(hMem);
     }
 }
 
-// ---- ctor -------------------------------------------------------------------
+// ---- worker thread ----------------------------------------------------------
+
+void ActivationDialog::startActivationWorker(const std::string& token) {
+    // Join any previous thread before spawning new one
+    if (workerThread_.joinable()) workerThread_.join();
+
+    resultReady_.store(false);
+    workerToken_ = token;
+
+    workerThread_ = std::thread([this, token]() {
+        std::string full  = License::HwidFull();
+        std::string short_ = License::HwidShort();
+        License::ActivationResult result =
+            License::LicenseClient::Activate(token, full, short_);
+        {
+            std::lock_guard<std::mutex> lk(resultMutex_);
+            workerResult_ = result;
+        }
+        resultReady_.store(true);
+    });
+}
+
+// Gọi từ Render() mỗi frame — nếu worker xong thì xử lý kết quả
+void ActivationDialog::pollWorkerResult() {
+    if (!resultReady_.load()) return;
+    resultReady_.store(false); // consume
+
+    License::ActivationResult result;
+    {
+        std::lock_guard<std::mutex> lk(resultMutex_);
+        result = workerResult_;
+    }
+
+    SetBusy(false);
+
+    if (result.ok) {
+        // Build cache entry
+        License::CachedLicense cached;
+        cached.token         = workerToken_;
+        cached.machine_id    = License::HwidFull();
+        cached.expires_at    = result.expires_at;
+        cached.last_verified = static_cast<int64_t>(std::time(nullptr));
+        cached.grace_hours   = result.grace_hours;
+
+        // Persist to disk
+        License::LicenseCache::Save(cached, cached.machine_id);
+
+        // Notify caller → close dialog
+        ImGui::CloseCurrentPopup();
+        open_ = false;
+        if (onActivated_) onActivated_(cached);
+    } else {
+        SetStatus(errorMessage(result.error), true);
+    }
+}
+
+// ---- ctor / dtor ------------------------------------------------------------
 
 ActivationDialog::ActivationDialog() {
     memset(codeBuffer_, 0, sizeof(codeBuffer_));
+}
+
+ActivationDialog::~ActivationDialog() {
+    // Must not destroy while worker is live — join it
+    if (workerThread_.joinable()) workerThread_.join();
 }
 
 // ---- public API -------------------------------------------------------------
@@ -50,8 +129,8 @@ void ActivationDialog::Open() {
     open_ = true;
 }
 
-void ActivationDialog::SetOnActivate(std::function<void(std::string)> cb) {
-    onActivate_ = std::move(cb);
+void ActivationDialog::SetOnActivated(std::function<void(License::CachedLicense)> cb) {
+    onActivated_ = std::move(cb);
 }
 
 void ActivationDialog::SetOnExit(std::function<void()> cb) {
@@ -59,9 +138,9 @@ void ActivationDialog::SetOnExit(std::function<void()> cb) {
 }
 
 void ActivationDialog::SetStatus(const std::string& msg, bool is_error) {
-    statusMsg_ = msg;
-    statusIsError_ = is_error;
-    busy_ = false; // clear busy when status arrives
+    statusMsg_      = msg;
+    statusIsError_  = is_error;
+    busy_           = false;
 }
 
 void ActivationDialog::SetBusy(bool busy) {
@@ -74,13 +153,14 @@ void ActivationDialog::SetBusy(bool busy) {
 void ActivationDialog::Render() {
     if (!open_) return;
 
-    // OpenPopup phải được gọi cùng frame với BeginPopupModal để ImGui nhận ra.
+    // Poll worker result before drawing this frame's UI
+    pollWorkerResult();
+
     if (pendingOpen_) {
         ImGui::OpenPopup("Activation Required");
         pendingOpen_ = false;
     }
 
-    // Căn giữa modal trên viewport
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
@@ -91,27 +171,22 @@ void ActivationDialog::Render() {
 
     bool modalOpen = true;
     if (!ImGui::BeginPopupModal("Activation Required", &modalOpen, kModalFlags)) {
-        // Popup chưa hiện (first frame race) — thử lại frame sau
         pendingOpen_ = true;
         return;
     }
 
-    // Lấy short + full HWID một lần — hàm đã cache nội bộ
     const std::string shortId = License::HwidShort();
 
-    // --- Machine ID row ------------------------------------------------------
+    // --- Machine ID row
     ImGui::TextUnformatted("Machine ID:");
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "%s", shortId.c_str());
     ImGui::SameLine();
-
-    // Nút Copy Full ID — copy 64-hex vào clipboard để user gửi cho admin
     if (ImGui::SmallButton("Copy Full ID")) {
         copyFullIdToClipboard();
         SetStatus("Copied to clipboard.", false);
     }
 
-    // --- Instruction text ----------------------------------------------------
     ImGui::Spacing();
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.75f, 0.75f, 1.0f));
     ImGui::TextWrapped("Please send this ID to the author to get an activation code.");
@@ -120,21 +195,19 @@ void ActivationDialog::Render() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    // --- Code input ----------------------------------------------------------
+    // --- Code input
     ImGui::TextUnformatted("Enter code:");
     ImGui::SameLine();
 
-    // Disable input khi đang busy
     if (busy_) ImGui::BeginDisabled();
     ImGui::SetNextItemWidth(220.0f);
-    // EnterReturnsTrue: nhấn Enter cũng trigger activate
     bool enterPressed = ImGui::InputText("##code", codeBuffer_, sizeof(codeBuffer_),
         ImGuiInputTextFlags_EnterReturnsTrue);
     if (busy_) ImGui::EndDisabled();
 
     ImGui::Spacing();
 
-    // --- Buttons -------------------------------------------------------------
+    // --- Buttons
     if (busy_) ImGui::BeginDisabled();
 
     bool doActivate = false;
@@ -151,9 +224,8 @@ void ActivationDialog::Render() {
 
     if (busy_) ImGui::EndDisabled();
 
-    // Xử lý activate sau khi đã render hết buttons (tránh mutate state giữa frame)
+    // Xử lý activate sau render buttons
     if (doActivate && !busy_) {
-        // Trim leading/trailing spaces
         std::string code(codeBuffer_);
         auto first = code.find_first_not_of(" \t\r\n");
         auto last  = code.find_last_not_of(" \t\r\n");
@@ -164,11 +236,11 @@ void ActivationDialog::Render() {
             SetStatus("Please enter a code.", true);
         } else {
             SetBusy(true);
-            if (onActivate_) onActivate_(code);
+            startActivationWorker(code);
         }
     }
 
-    // --- Status line ---------------------------------------------------------
+    // --- Status line
     if (!statusMsg_.empty()) {
         ImGui::Spacing();
         ImGui::Separator();
@@ -182,7 +254,6 @@ void ActivationDialog::Render() {
 
     ImGui::EndPopup();
 
-    // Nếu user đóng popup bằng nút X (modalOpen menjadi false)
     if (!modalOpen) {
         open_ = false;
         if (onExit_) onExit_();
