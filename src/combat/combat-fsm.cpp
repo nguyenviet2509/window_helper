@@ -30,13 +30,62 @@ void CombatFsm::enable(bool on) {
     // F8 chỉ kích hoạt đánh quái — KHÔNG cast buff lúc khởi động.
     // Buff chạy độc lập qua master switch F9 (cfg_.buffEnabled) + chu kỳ rebuff
     // trong stepAttacking. Nếu F9 OFF, findDueSlot luôn trả -1 → không buff.
+    if (cfg_.spamSkillEnabled) {
+        enterSpamming(now);
+        return;
+    }
     enterArming(now);
 }
 
 void CombatFsm::updateConfig(const CombatConfig& cfg) {
+    bool wasSpam = cfg_.spamSkillEnabled;
     cfg_ = cfg;
     syncLastCastSize();
     sweep_.setRange(cfg.attackRadiusMin, cfg.attackRadiusMax);
+    // Spam toggle on giữa session khi đang chạy: chuyển sang Spamming + re-cache spot.
+    if (enabled_ && cfg_.spamSkillEnabled && !wasSpam) {
+        enterSpamming(std::chrono::steady_clock::now());
+    } else if (enabled_ && cfg_.spamSkillEnabled) {
+        // Pct safe spot có thể đổi — re-cache.
+        cacheSpamSpot();
+    } else if (enabled_ && wasSpam && !cfg_.spamSkillEnabled) {
+        // Tắt spam giữa session: quay về Arming → Attacking.
+        enterArming(std::chrono::steady_clock::now());
+    }
+}
+
+void CombatFsm::cacheSpamSpot() {
+    RECT r{};
+    if (target_) GetClientRect(target_, &r);
+    int w = r.right - r.left;
+    int h = r.bottom - r.top;
+    double px = std::clamp(cfg_.buffSafeSpotXPct, 0.05, 0.95);
+    double py = std::clamp(cfg_.buffSafeSpotYPct, 0.05, 0.95);
+    spamX_ = r.left + static_cast<int>(w * px);
+    spamY_ = r.top  + static_cast<int>(h * py);
+}
+
+int CombatFsm::rollHumanIntervalMs() const {
+    return 5000 + (std::rand() % 5001);   // [5000, 10000]
+}
+
+int CombatFsm::jitter10() const {
+    return (std::rand() % 21) - 10;       // [-10, +10]
+}
+
+void CombatFsm::enterSpamming(std::chrono::steady_clock::time_point now) {
+    cacheSpamSpot();
+    int sx = spamX_, sy = spamY_;
+    InputCmd m;
+    m.priority = P3_Combat;
+    m.fireAt = now;
+    m.action = [sx, sy](IInputBackend& b) { b.sendMouseMove(sx, sy); };
+    sched_.schedule(std::move(m));
+    pendingF1AfterBuff_ = true;
+    lastSpamAt_ = now;
+    nextHumanClickAt_ = now + ms(rollHumanIntervalMs());
+    lastHumanClickAt_ = now;
+    state_ = CombatState::Spamming;
 }
 
 void CombatFsm::enterBuffing(std::chrono::steady_clock::time_point now) {
@@ -83,7 +132,16 @@ void CombatFsm::stepBuffing(std::chrono::steady_clock::time_point now) {
     if (now < nextStepAt_) return;
 
     int idx = findDueSlot(now);
-    if (idx < 0) { enterArming(now); return; }
+    if (idx < 0) {
+        // Buff cycle xong: nếu spam mode → về Spamming với F1 priming, else về Arming.
+        if (cfg_.spamSkillEnabled) {
+            pendingF1AfterBuff_ = true;
+            lastSpamAt_ = now;          // reset cadence để click F1+rc fire sớm
+            state_ = CombatState::Spamming;
+            return;
+        }
+        enterArming(now); return;
+    }
 
     const BuffSlotCfg& slot = cfg_.buffs[idx];
     HWND target = target_;
@@ -167,13 +225,78 @@ void CombatFsm::stepAttacking(const VisionState& v, std::chrono::steady_clock::t
     engagementUntil_ = now + ms(cfg_.engagementLockMs + jitter);
 }
 
+void CombatFsm::stepSpamming(std::chrono::steady_clock::time_point now) {
+    // Buff due → bay vào Buffing; pendingF1AfterBuff_ set lại khi buff xong (xem stepBuffing).
+    if (findDueSlot(now) >= 0) {
+        enterBuffing(now);
+        return;
+    }
+
+    // Human-like left-click jitter — fire mỗi 5-10s tại safe spot ± 10px.
+    if (now >= nextHumanClickAt_) {
+        int jx = spamX_ + jitter10();
+        int jy = spamY_ + jitter10();
+        // 1. Left-click tại jitter pos.
+        InputCmd c;
+        c.priority = P3_Combat;
+        c.fireAt = now;
+        c.action = [jx, jy](IInputBackend& b) { b.sendLeftClick(jx, jy); };
+        sched_.schedule(std::move(c));
+        // 2. Quay cursor về safe spot sau ~100ms để right-click kế tiếp đúng vị trí.
+        int sx = spamX_, sy = spamY_;
+        InputCmd m;
+        m.priority = P3_Combat;
+        m.fireAt = now + ms(100);
+        m.action = [sx, sy](IInputBackend& b) { b.sendMouseMove(sx, sy); };
+        sched_.schedule(std::move(m));
+        lastHumanClickAt_ = now;
+        nextHumanClickAt_ = now + ms(rollHumanIntervalMs());
+        return;   // skip right-click tick này
+    }
+
+    // Collision guard: vừa left-click <500ms → delay right-click.
+    if ((now - lastHumanClickAt_) < ms(500)) return;
+
+    // Interval check.
+    int interval = std::clamp(cfg_.spamSkillIntervalMs, 100, 10000);
+    if ((now - lastSpamAt_) < ms(interval)) return;
+
+    // Fire skill.
+    int cx = spamX_, cy = spamY_;
+    if (pendingF1AfterBuff_) {
+        WORD vk = cfg_.mainAttackKey;
+        InputCmd k;
+        k.priority = P3_Combat;
+        k.fireAt = now;
+        k.action = [vk](IInputBackend& b) { b.sendKeyTap(vk, 30); };
+        sched_.schedule(std::move(k));
+
+        InputCmd r;
+        r.priority = P3_Combat;
+        r.fireAt = now + ms(100);
+        r.action = [cx, cy](IInputBackend& b) { b.sendRightClick(cx, cy); };
+        sched_.schedule(std::move(r));
+        pendingF1AfterBuff_ = false;
+    } else {
+        InputCmd r;
+        r.priority = P3_Combat;
+        r.fireAt = now;
+        r.action = [cx, cy](IInputBackend& b) { b.sendRightClick(cx, cy); };
+        sched_.schedule(std::move(r));
+    }
+    lastSpamAt_ = now;
+}
+
 void CombatFsm::tick(const VisionState& v, std::chrono::steady_clock::time_point now) {
     if (!enabled_) return;
     if (refill_ && refill_->busy()) return;   // pause combat khi refill đang chạy
 
     switch (state_) {
     case CombatState::Idle:
-        enterBuffing(now);
+        // Spam mode: vào Spamming trực tiếp (không buff trước).
+        // Non-spam mode: vào Buffing để chạy chu kỳ buff trước.
+        if (cfg_.spamSkillEnabled) enterSpamming(now);
+        else                       enterBuffing(now);
         break;
     case CombatState::Buffing:
         stepBuffing(now);
@@ -183,6 +306,9 @@ void CombatFsm::tick(const VisionState& v, std::chrono::steady_clock::time_point
         break;
     case CombatState::Attacking:
         stepAttacking(v, now);
+        break;
+    case CombatState::Spamming:
+        stepSpamming(now);
         break;
     }
 }

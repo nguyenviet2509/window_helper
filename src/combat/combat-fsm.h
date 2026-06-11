@@ -16,7 +16,7 @@
 #include "combat-activity-monitor.h"
 #include "../vision/roi.h"
 
-enum class CombatState { Idle, Buffing, Arming, Attacking };
+enum class CombatState { Idle, Buffing, Arming, Attacking, Spamming };
 
 class PotRefillScheduler;   // fwd decl: skip combat khi refill đang chạy
 
@@ -44,6 +44,15 @@ private:
 
     void stepBuffing(std::chrono::steady_clock::time_point now);
     void stepAttacking(const VisionState& v, std::chrono::steady_clock::time_point now);
+    void stepSpamming(std::chrono::steady_clock::time_point now);
+    void enterSpamming(std::chrono::steady_clock::time_point now);
+
+    // Cache safe-spot tọa độ từ buffSafeSpot{X,Y}Pct * client rect. Gọi khi enable spam hoặc pct đổi.
+    void cacheSpamSpot();
+    // Random uniform [5000, 10000] ms — interval giữa các left-click humanizer.
+    int rollHumanIntervalMs() const;
+    // Random [-10, +10] px jitter quanh safe spot.
+    int jitter10() const;
 
     // Trả index slot enabled đầu tiên đang due (now - lastCastAt_[i] >= interval).
     // -1 nếu không slot nào due.
@@ -67,4 +76,13 @@ private:
     // Per-slot last cast timestamp; epoch zero = chưa cast lần nào → due ngay.
     std::vector<std::chrono::steady_clock::time_point> lastCastAt_;
     const PotRefillScheduler* refill_ = nullptr;
+
+    // Spam mode state.
+    int spamX_ = 0;
+    int spamY_ = 0;
+    std::chrono::steady_clock::time_point lastSpamAt_{};
+    bool pendingF1AfterBuff_ = false;
+    // Humanizer: schedule left-click random 5-10s.
+    std::chrono::steady_clock::time_point nextHumanClickAt_{};
+    std::chrono::steady_clock::time_point lastHumanClickAt_{};
 };

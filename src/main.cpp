@@ -60,9 +60,13 @@ HWND FindTarget() {
     return ctx.found;
 }
 
-BarConfig MakeBar(int x, int y, int w, int h, std::vector<HueRange> hues) {
-    BarConfig c; c.region.x = x; c.region.y = y; c.region.w = w; c.region.h = h;
-    c.region.shape = "rect"; c.hues = std::move(hues);
+// Build runtime BarConfig (vision pipeline) từ VisionBarCfg (config).
+// VisionBarCfg là plain data trong AppConfig; BarConfig là runtime struct trong
+// VisionPipeline. Tách layer cho phép swap config mà không pollute pipeline.
+BarConfig MakeBar(const VisionBarCfg& cfg) {
+    BarConfig c;
+    c.region = cfg.region;
+    c.hues   = cfg.hues;
     return c;
 }
 
@@ -105,6 +109,12 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
     const std::string configPath = (exeDir() / "config.json").string();
     if (loader.load(configPath, cfg)) {
         LOG_INFO("Loaded config.json");
+        // Schema migration: nếu file cũ thiếu section "vision" → materialize
+        // defaults trên disk để user thấy được + edit sau này.
+        if (loader.visionMissing()) {
+            LOG_WARN("config.json missing 'vision' section; filled defaults and saved.");
+            loader.save(configPath, cfg);
+        }
     } else {
         LOG_INFO("config.json missing; using defaults and writing one");
         loader.save(configPath, cfg);
@@ -153,16 +163,21 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         sched.stop(); Logger::instance().close();
         return 2;
     }
-    // WGC frame = 1010x789. HP do tu Paint screenshot.
-    auto hp = MakeBar(403, 656, 22, 121, { {0,10}, {170,180} });
-    auto sp = MakeBar(383, 675, 11, 102, { {40, 80} });  // top-left (383,675), bottom-right (394,777)
-    auto mp = MakeBar(586, 655, 21, 121, { {100,130} });  // top-left (586,655), bottom-right (607,776)
+    // Vision ROI + hue ranges loaded từ cfg.vision (auto-migrated above nếu cũ).
+    // Defaults = PT 1010x789 layout. Đổi qua config.json / preset cho server khác.
+    auto hp = MakeBar(cfg.vision.hp);
+    auto sp = MakeBar(cfg.vision.sp);
+    auto mp = MakeBar(cfg.vision.mp);
     VisionPipeline pipe(cap, hp, mp, sp);
     // Log gia tri detector moi 1s (tam thoi de debug calibration).
     std::atomic<uint64_t> lastLogMs{0};
+    // win sẽ được construct phía dưới; dùng raw pointer + setter sau khi UI init
+    // để tránh lifecycle phức tạp. Callback đọc qua pointer (nullable safe).
+    MainWindow* uiPtr = nullptr;
     pipe.setCallback([&](const VisionState& s) {
         health.notifyFrameArrived(s.seq);
         dispatcher.onVisionTick(s);
+        if (uiPtr) uiPtr->notifyVisionState(s.hpPct, s.mpPct, s.spPct);
         auto nowMs = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::steady_clock::now().time_since_epoch()).count();
         if (nowMs - lastLogMs.load() >= 1000) {
@@ -205,11 +220,15 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         dispatcher.updateConfig(c);
         refill.enable(c.refill.enabled);
         backend.setMousePathEnabled(c.combat.enableMousePath);
+        // Vision ROI/hue: hot-reload pipeline với config mới (atomic swap, EMA reset).
+        pipe.updateConfig(MakeBar(c.vision.hp), MakeBar(c.vision.mp), MakeBar(c.vision.sp));
         Logger::instance().logf(LogLevel::Info,
-            "[config] hot-reload refill.enabled=%d intervalSec hp=%d sp=%d mp=%d",
+            "[config] hot-reload refill.enabled=%d intervalSec hp=%d sp=%d mp=%d vision=updated",
             (int)c.refill.enabled,
             c.refill.hp.intervalSec, c.refill.sp.intervalSec, c.refill.mp.intervalSec);
     });
+    // UI pointer cho vision callback push live %.
+    uiPtr = &win;
     win.setOnSessionLockChange([&](bool locked) {
         gate.setSessionLocked(locked);
         LOG_INFO(locked ? "Session locked — input blocked"

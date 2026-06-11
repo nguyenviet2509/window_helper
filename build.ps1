@@ -28,6 +28,19 @@ if (-not $NoKill) {
         Write-Host "[kill] PID $($p.Id): $($p.Path)" -ForegroundColor Yellow
         Stop-Process -Id $p.Id -Force
     }
+    # Wait briefly để OS release file handle sau khi kill
+    if ($running) { Start-Sleep -Milliseconds 300 }
+}
+
+# 2b. Delete stale exe(s) — random suffix svc_XXXX.exe stale có thể gây nhầm lẫn bản mới.
+$stale = Get-ChildItem $exeGlob -ErrorAction SilentlyContinue
+foreach ($f in $stale) {
+    try {
+        Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop
+        Write-Host "[clean] removed $($f.Name)" -ForegroundColor DarkYellow
+    } catch {
+        Write-Warning "[clean] không xóa được $($f.Name): $_"
+    }
 }
 
 # 3. (Optional) configure

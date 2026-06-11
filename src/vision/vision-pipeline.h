@@ -4,6 +4,7 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <opencv2/core.hpp>
 #include "../capture/i-frame-source.h"
 #include "bar-detector.h"
 #include "roi.h"
@@ -33,6 +34,12 @@ public:
     VisionPipeline(IFrameSource& src, BarConfig hp, BarConfig mp, BarConfig sp);
 
     void setCallback(std::function<void(const VisionState&)> cb);
+    // Hot-reload ROI + hue ranges. Thread-safe; áp dụng cho frame tick kế tiếp.
+    // Reset EMA để smoothing không lưu state từ ROI cũ.
+    void updateConfig(BarConfig hp, BarConfig mp, BarConfig sp);
+    // Trả về deep-copy frame mới nhất pipeline đã consume (rỗng nếu chưa có).
+    // Dùng bởi calibration UI để sample hue / preview mà không tranh chấp source.
+    cv::Mat snapshotLatestFrame() const;
     void start();
     void stop();
 
@@ -48,4 +55,7 @@ private:
     std::thread th_;
     std::atomic<bool> running_{false};
     std::mutex cbMu_;
+    std::mutex cfgMu_;
+    mutable std::mutex frameMu_;
+    cv::Mat latestFrame_;
 };

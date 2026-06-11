@@ -61,6 +61,17 @@ void PostMessageBackend::sendRightClick(int x, int y) {
     lastSent_ = { x, y };
 }
 
+void PostMessageBackend::sendLeftClick(int x, int y) {
+    if (!target_) return;
+    executePath(x, y, 0);
+    LPARAM lp = MAKELPARAM(x, y);
+    PostMessageW(target_, WM_MOUSEMOVE, 0, lp);
+    PostMessageW(target_, WM_LBUTTONDOWN, MK_LBUTTON, lp);
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    PostMessageW(target_, WM_LBUTTONUP, 0, lp);
+    lastSent_ = { x, y };
+}
+
 void PostMessageBackend::sendShiftRightClick(int x, int y) {
     if (!target_) return;
     PostMessageW(target_, WM_KEYDOWN, VK_LSHIFT, keyLParam(VK_LSHIFT, false));

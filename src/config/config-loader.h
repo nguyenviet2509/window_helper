@@ -11,6 +11,11 @@ public:
     bool load(const std::string& path, AppConfig& out);
     bool save(const std::string& path, const AppConfig& in) const;
 
+    // True nếu config.json load OK nhưng thiếu "vision" section → caller nên save
+    // lại để materialize defaults trên disk + log warning.
+    bool visionMissing() const { return visionMissing_; }
+
 private:
     nlohmann::json advancedRaw_;     // preserves unknown blocks
+    bool visionMissing_ = false;
 };

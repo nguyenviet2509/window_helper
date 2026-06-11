@@ -53,11 +53,17 @@ struct CombatConfig {
     // Pick chỗ KHÔNG có mob và KHÔNG có UI. Nếu click trúng mob -> game biến skill thành đánh thường.
     double buffSafeSpotXPct = 0.5;
     double buffSafeSpotYPct = 0.5;
+    // Spam skill mode: bỏ qua mob targeting, chỉ right-click lặp tại safe spot.
+    // Pot/refill/buff vẫn chạy bình thường. Sau buff cycle → click kế tiếp = F1 tap + right-click.
+    // Humanizer: random 5-10s fire 1 left-click jitter ±10px quanh safe spot để fake người thật.
+    bool spamSkillEnabled = false;
+    int spamSkillIntervalMs = 1000;   // clamp [100, 10000]. Default ≈ CD skill phổ biến PT.
     std::vector<BuffSlotCfg> buffs = {
         {true, VK_F2, 100, 800, 150, true, 300},
         {true, VK_F3, 100, 800, 150, true, 300},
         {true, VK_F4, 100, 800, 150, true, 300},
         {true, VK_F5, 100, 800, 150, true, 300},
+        {true, VK_F6, 100, 800, 150, true, 300},
     };
 };
 
@@ -84,10 +90,30 @@ struct PotRefillConfig {
 
 enum class BackendKind { SendInput, PostMessage };
 
+// Per-bar vision ROI + hue ranges. Mặc định = giá trị hardcoded cũ ở main.cpp
+// (PT 1010x789). Đổi qua config.json hoặc preset để chơi server khác (UI skin /
+// resolution khác). Schema migration: nếu config.json thiếu section "vision" →
+// fill defaults này, log warning, save lại.
+struct VisionBarCfg {
+    BarRegion region;
+    std::vector<HueRange> hues;
+};
+
+struct VisionConfig {
+    // Expected WGC frame size. Warning nếu mismatch (ROI có thể sai chỗ).
+    int frameWidth  = 1010;
+    int frameHeight = 789;
+    // Defaults = hardcoded PT values (main.cpp pre-refactor).
+    VisionBarCfg hp = { {403, 656, 22, 121, "rect", 0}, { {0,10}, {170,180} } };
+    VisionBarCfg sp = { {383, 675, 11, 102, "rect", 0}, { {40, 80} } };
+    VisionBarCfg mp = { {586, 655, 21, 121, "rect", 0}, { {100,130} } };
+};
+
 struct AppConfig {
     PotConfig pot;
     CombatConfig combat;
     PotRefillConfig refill;
+    VisionConfig vision;
     // Backend mặc định khi khởi tạo input. PT (Xingcode3) hiện từ chối PostMessage
     // → giữ SendInput. Sau khi probe verdict OK với game khác, có thể đặt PostMessage.
     BackendKind defaultBackend = BackendKind::SendInput;

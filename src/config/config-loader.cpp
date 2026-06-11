@@ -1,4 +1,5 @@
 #include "config-loader.h"
+#include <algorithm>
 #include <fstream>
 #include <filesystem>
 
@@ -91,6 +92,8 @@ static void toJson(json& j, const CombatConfig& c) {
         {"enableMousePath", c.enableMousePath},
         {"buffSafeSpotXPct", c.buffSafeSpotXPct},
         {"buffSafeSpotYPct", c.buffSafeSpotYPct},
+        {"spamSkillEnabled", c.spamSkillEnabled},
+        {"spamSkillIntervalMs", c.spamSkillIntervalMs},
         {"buffs", buffs},
     };
 }
@@ -115,13 +118,24 @@ static void fromJson(const json& j, CombatConfig& c) {
     if (j.contains("enableMousePath")) c.enableMousePath = j["enableMousePath"];
     if (j.contains("buffSafeSpotXPct")) c.buffSafeSpotXPct = j["buffSafeSpotXPct"];
     if (j.contains("buffSafeSpotYPct")) c.buffSafeSpotYPct = j["buffSafeSpotYPct"];
+    if (j.contains("spamSkillEnabled")) c.spamSkillEnabled = j["spamSkillEnabled"];
+    if (j.contains("spamSkillIntervalMs"))
+        c.spamSkillIntervalMs = std::clamp(j["spamSkillIntervalMs"].get<int>(), 100, 10000);
     if (j.contains("buffs") && j["buffs"].is_array()) {
-        c.buffs.clear();
+        // Backfill: nếu config cũ có ít slot hơn default, giữ default cho slot còn thiếu.
+        // Tránh wipe slot mới (vd F6) khi user load config.json cũ chỉ có 4 slot.
+        CombatConfig def;
+        std::vector<BuffSlotCfg> loaded;
         for (const auto& bj : j["buffs"]) {
             BuffSlotCfg b;
             fromJson(bj, b, legacyCycleSec);
-            c.buffs.push_back(b);
+            loaded.push_back(b);
         }
+        if (loaded.size() < def.buffs.size()) {
+            for (size_t i = loaded.size(); i < def.buffs.size(); ++i)
+                loaded.push_back(def.buffs[i]);
+        }
+        c.buffs = std::move(loaded);
     }
 }
 
@@ -165,6 +179,56 @@ static void fromJson(const json& j, PotRefillConfig& r) {
     if (j.contains("mp")) fromJson(j["mp"], r.mp);
 }
 
+static void toJson(json& j, const VisionBarCfg& b) {
+    json hues = json::array();
+    for (const auto& h : b.hues) hues.push_back(json{ {"lo", h.hMin}, {"hi", h.hMax} });
+    j = json{
+        {"region", { {"x", b.region.x}, {"y", b.region.y},
+                     {"w", b.region.w}, {"h", b.region.h},
+                     {"shape", b.region.shape}, {"radius", b.region.radius} }},
+        {"hues", hues},
+    };
+}
+
+static void fromJson(const json& j, VisionBarCfg& b) {
+    if (j.contains("region")) {
+        const auto& r = j["region"];
+        if (r.contains("x")) b.region.x = r["x"];
+        if (r.contains("y")) b.region.y = r["y"];
+        if (r.contains("w")) b.region.w = r["w"];
+        if (r.contains("h")) b.region.h = r["h"];
+        if (r.contains("shape")) b.region.shape = r["shape"].get<std::string>();
+        if (r.contains("radius")) b.region.radius = r["radius"];
+    }
+    if (j.contains("hues") && j["hues"].is_array()) {
+        b.hues.clear();
+        for (const auto& hj : j["hues"]) {
+            HueRange h{};
+            if (hj.contains("lo")) h.hMin = hj["lo"];
+            if (hj.contains("hi")) h.hMax = hj["hi"];
+            b.hues.push_back(h);
+        }
+    }
+}
+
+static void toJson(json& j, const VisionConfig& v) {
+    json jhp, jsp, jmp;
+    toJson(jhp, v.hp); toJson(jsp, v.sp); toJson(jmp, v.mp);
+    j = json{
+        {"frameWidth", v.frameWidth},
+        {"frameHeight", v.frameHeight},
+        {"hp", jhp}, {"sp", jsp}, {"mp", jmp},
+    };
+}
+
+static void fromJson(const json& j, VisionConfig& v) {
+    if (j.contains("frameWidth"))  v.frameWidth  = j["frameWidth"];
+    if (j.contains("frameHeight")) v.frameHeight = j["frameHeight"];
+    if (j.contains("hp")) fromJson(j["hp"], v.hp);
+    if (j.contains("sp")) fromJson(j["sp"], v.sp);
+    if (j.contains("mp")) fromJson(j["mp"], v.mp);
+}
+
 static const char* backendToString(BackendKind k) {
     return k == BackendKind::PostMessage ? "PostMessage" : "SendInput";
 }
@@ -180,6 +244,10 @@ bool ConfigLoader::load(const std::string& path, AppConfig& out) {
     if (j.contains("pot"))      fromJson(j["pot"], out.pot);
     if (j.contains("combat"))   fromJson(j["combat"], out.combat);
     if (j.contains("refill"))   fromJson(j["refill"], out.refill);
+    // Migration: nếu thiếu "vision" → giữ defaults (đã là giá trị hardcoded cũ),
+    // visionMissing_ = true để caller biết save lại file.
+    if (j.contains("vision"))   fromJson(j["vision"], out.vision);
+    else                        visionMissing_ = true;
     if (j.contains("defaultBackend") && j["defaultBackend"].is_string())
         out.defaultBackend = backendFromString(j["defaultBackend"].get<std::string>());
     if (j.contains("advanced")) advancedRaw_ = j["advanced"];
@@ -191,6 +259,7 @@ bool ConfigLoader::save(const std::string& path, const AppConfig& in) const {
     toJson(j["pot"], in.pot);
     toJson(j["combat"], in.combat);
     toJson(j["refill"], in.refill);
+    toJson(j["vision"], in.vision);
     j["defaultBackend"] = backendToString(in.defaultBackend);
     if (!advancedRaw_.is_null()) j["advanced"] = advancedRaw_;
 

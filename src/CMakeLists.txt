@@ -8,6 +8,7 @@ add_executable(WindowHelper WIN32
     vision/vision-pipeline.cpp
     vision/bar-detector.cpp
     vision/waterline.cpp
+    vision/hue-sampler.cpp
     input/postmessage-backend.cpp
     input/send-input-backend.cpp
     input/input-scheduler.cpp
@@ -23,6 +24,7 @@ add_executable(WindowHelper WIN32
     dispatch/action-dispatcher.cpp
     config/config-loader.cpp
     ui/main-window.cpp
+    ui/calibration-window.cpp
     ui/tray-icon.cpp
     resources/version.rc
 )

@@ -2,7 +2,7 @@
 
 ## CÃ¡ch dÃ¹ng
 1. Má»Ÿ Priston Tale trÆ°á»›c.
-2. Double-click `svc_zih5t.exe`.
+2. Double-click `svc_f4m02.exe`.
 3. Báº­t AUTO trong UI hoáº·c nháº¥n F8 toggle.
 
 ## YÃªu cáº§u

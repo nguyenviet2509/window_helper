@@ -59,6 +59,16 @@ PotRefillScheduler::PotRefillScheduler(InputScheduler& s, OutputGate& g, HWND t,
                                        const PotRefillConfig& cfg)
     : sched_(s), gate_(g), target_(t), cfg_(cfg) {}
 
+// F8 transition OFF->ON: reset last*At_ = now() để lần refill đầu fire sau intervalSec
+// (thay vì instant). Hot-reload config với enabled=true khi đang ON: KHÔNG reset.
+void PotRefillScheduler::enable(bool on) {
+    if (on && !enabled_) {
+        auto now = std::chrono::steady_clock::now();
+        lastHpAt_ = lastSpAt_ = lastMpAt_ = now;
+    }
+    enabled_ = on;
+}
+
 void PotRefillScheduler::scheduleStep(int prio, TP fireAt,
                                       std::function<void(IInputBackend&)> action) {
     InputCmd c;

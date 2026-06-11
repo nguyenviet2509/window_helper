@@ -10,6 +10,21 @@ void VisionPipeline::setCallback(std::function<void(const VisionState&)> cb) {
     cb_ = std::move(cb);
 }
 
+cv::Mat VisionPipeline::snapshotLatestFrame() const {
+    std::lock_guard<std::mutex> g(frameMu_);
+    return latestFrame_.clone();
+}
+
+void VisionPipeline::updateConfig(BarConfig hp, BarConfig mp, BarConfig sp) {
+    std::lock_guard<std::mutex> g(cfgMu_);
+    hpCfg_ = std::move(hp);
+    mpCfg_ = std::move(mp);
+    spCfg_ = std::move(sp);
+    hpEma_.reset();
+    mpEma_.reset();
+    spEma_.reset();
+}
+
 void VisionPipeline::start() {
     if (running_.exchange(true)) return;
     th_ = std::thread([this] { runLoop(); });
@@ -36,9 +51,13 @@ void VisionPipeline::runLoop() {
                     "[vision] FIRST FRAME SIZE: %d x %d (cols x rows)",
                     f.bgra.cols, f.bgra.rows);
             }
-            double hpRaw = det_.computeFillRatio(f.bgra, hpCfg_.region, hpCfg_.hues);
-            double mpRaw = det_.computeFillRatio(f.bgra, mpCfg_.region, mpCfg_.hues);
-            double spRaw = det_.computeFillRatio(f.bgra, spCfg_.region, spCfg_.hues);
+            { std::lock_guard<std::mutex> g(frameMu_); latestFrame_ = f.bgra.clone(); }
+            BarConfig hpSnap, mpSnap, spSnap;
+            { std::lock_guard<std::mutex> g(cfgMu_);
+              hpSnap = hpCfg_; mpSnap = mpCfg_; spSnap = spCfg_; }
+            double hpRaw = det_.computeFillRatio(f.bgra, hpSnap.region, hpSnap.hues);
+            double mpRaw = det_.computeFillRatio(f.bgra, mpSnap.region, mpSnap.hues);
+            double spRaw = det_.computeFillRatio(f.bgra, spSnap.region, spSnap.hues);
 
             VisionState s;
             s.hpPct = hpEma_.update(hpRaw);

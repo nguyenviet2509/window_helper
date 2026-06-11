@@ -11,6 +11,7 @@ public:
     virtual void sendKeyUp(WORD vk) = 0;
     virtual void sendRightClick(int x, int y) = 0;
     virtual void sendShiftRightClick(int x, int y) = 0;
+    virtual void sendLeftClick(int x, int y) = 0;
     // Di chuyển con trỏ đến (x,y) trong toạ độ client của target. Dùng bởi mouse-path.
     virtual void sendMouseMove(int x, int y) = 0;
     // Bật/tắt Bezier mouse path cho các click. Khi tắt → click "teleport" như cũ.

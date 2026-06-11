@@ -2,7 +2,7 @@
 name: Repick Dwell Tuning + MP-only Mob Death Detect
 slug: repick-dwell-and-mp-death-detect
 date: 260610-1404
-status: pending
+status: complete
 mode: fast
 blockedBy: []
 blocks: []

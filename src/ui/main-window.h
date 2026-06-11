@@ -11,6 +11,7 @@
 #include "../config/config-loader.h"
 #include "tray-icon.h"
 #include "hotkey-manager.h"
+#include "calibration-window.h"
 
 class MainWindow {
 public:
@@ -29,6 +30,9 @@ public:
 
     void attachTray(TrayIcon* t)        { tray_ = t; }
     void attachHotkey(HotkeyManager* h) { hotkey_ = h; }
+    void notifyVisionState(double hp, double mp, double sp) {
+        calibration_.setLatestVision(hp, mp, sp);
+    }
     void setTarget(HWND target) { target_ = target; }
     void setOnExit(std::function<void()> cb) { onExit_ = std::move(cb); }
     void setOnSessionLockChange(std::function<void(bool)> cb) { onSessionLock_ = std::move(cb); }
@@ -59,6 +63,13 @@ private:
     std::chrono::steady_clock::time_point lastChangeAt_{};
     int debounceMs_ = 500;
 
+    // Auto-fit chiều cao cửa sổ tới content cho đến khi user tự resize manual.
+    // Mục đích: hiển thị hết settings + nút Calibrate mà không cần scroll khi mở.
+    // userResized_ set true khi WM_SIZE đến với h khác autoClientHLastApplied_.
+    float lastContentBottomY_ = 0.0f;
+    int   autoClientHLastApplied_ = 0;
+    bool  userResized_ = false;
+
     std::function<void(bool)> onCombatToggle_;
     std::function<void(bool)> onBuffToggle_;
     std::function<void(const AppConfig&)> onConfigChanged_;
@@ -73,6 +84,7 @@ private:
     TrayIcon* tray_ = nullptr;
     HotkeyManager* hotkey_ = nullptr;
     HWND target_ = nullptr;
+    CalibrationWindow calibration_;
 
 public:
     struct DxState;

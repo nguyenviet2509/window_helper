@@ -17,7 +17,7 @@ public:
     PotRefillScheduler(InputScheduler& sched, OutputGate& gate, HWND target,
                        const PotRefillConfig& cfg);
 
-    void enable(bool on) { enabled_ = on; }
+    void enable(bool on);
     bool enabled() const { return enabled_; }
     bool busy() const    { return state_ != State::Idle; }
 

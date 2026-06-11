@@ -6,7 +6,9 @@
 #include <tchar.h>
 #include <wtsapi32.h>
 #include <wrl/client.h>
+#include <algorithm>
 #include <climits>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 #include <functional>
@@ -173,6 +175,9 @@ bool MainWindow::init(HINSTANCE hInst, int nShow) {
     ImGui_ImplWin32_Init(hwnd_);
     ImGui_ImplDX11_Init(dx_->device.Get(), dx_->ctx.Get());
 
+    // Load preset list cho dropdown ngoài (chọn preset không cần mở calibration).
+    calibration_.refreshPresets();
+
     initialized_ = true;
     return true;
 }
@@ -201,6 +206,10 @@ void MainWindow::drawSettingsPanel() {
                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
 
+    // Thu gọn ô nhập (DragInt/DragFloat/InputText) còn ~110px để label tiếng Việt dài
+    // có chỗ hiển thị đầy đủ. ImGui default cho widget chiếm phần lớn dòng.
+    ImGui::PushItemWidth(110.0f);
+
     // Trạng thái cửa sổ đích (auto-attach lúc khởi động; muốn re-attach phải restart).
     if (target_) {
         wchar_t title[128] = {};
@@ -224,6 +233,45 @@ void MainWindow::drawSettingsPanel() {
     } else {
         ImGui::TextColored(ImVec4(0.8f, 0.1f, 0.1f, 1.0f), "Chưa tìm thấy cửa sổ game");
     }
+    ImGui::Separator();
+
+    // Nút Hiệu chỉnh đặt riêng dòng đầu để dễ thấy. Đổi server PT khác → vào đây
+    // để chỉnh lại vùng quét HP/MP/SP + lấy mẫu màu thanh.
+    ImVec4 calColor(0.15f, 0.35f, 0.70f, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Button, calColor);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.45f, 0.85f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.10f, 0.30f, 0.65f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+    if (ImGui::Button("Hiệu chỉnh nhận diện HP/MP/SP (cho server khác)", ImVec2(-1, 32))) {
+        if (calibration_.isOpen()) calibration_.close();
+        else calibration_.open();
+    }
+    ImGui::PopStyleColor(4);
+    // Hiển thị tên preset đang dùng (rỗng = chưa nạp preset nào, dùng config gốc).
+    const std::string& cur = calibration_.currentPresetName();
+    if (!cur.empty()) {
+        ImGui::TextColored(ImVec4(0.1f, 0.6f, 0.9f, 1.0f),
+                           "Đang dùng cấu hình: %s", cur.c_str());
+    } else {
+        ImGui::TextDisabled("Chưa nạp cấu hình preset (dùng config gốc)");
+    }
+    // Quick dropdown chọn preset ngay tại main panel (khỏi mở calibration).
+    const auto& presets = calibration_.presets();
+    const char* curLabel = cur.empty() ? "(chọn preset)" : cur.c_str();
+    ImGui::SetNextItemWidth(220.0f);
+    if (ImGui::BeginCombo("Chọn nhanh preset", curLabel)) {
+        for (const auto& name : presets) {
+            bool sel = (name == cur);
+            if (ImGui::Selectable(name.c_str(), sel)) {
+                if (calibration_.loadPresetByName(name, draft_.vision)) {
+                    markDirty();
+                }
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Tải lại")) calibration_.refreshPresets();
     ImGui::Separator();
 
     bool combatOn = draft_.combat.enabled;
@@ -274,16 +322,42 @@ void MainWindow::drawSettingsPanel() {
     if (ImGui::CollapsingHeader("Đánh quái", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto& c = draft_.combat;
         bool any = false;
-        any |= ImGui::DragInt("Chờ tối thiểu khi đổi mục tiêu (ms)", &c.repickMinDwellMs, 100, 500, 10000);
-        any |= ImGui::DragInt("Chờ tối đa khi đổi mục tiêu (ms)", &c.repickMaxDwellMs, 100, 1000, 60000);
-        any |= ImGui::DragInt("Khoá đánh sau shift+phải (ms)", &c.engagementLockMs, 100, 1000, 15000);
+
+        // Spam skill mode: bỏ qua mob targeting, chỉ right-click lặp tại safe spot.
+        any |= ImGui::Checkbox("Spam skill (bỏ qua mob, right-click safe spot)", &c.spamSkillEnabled);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "Sau khi shift+chuột phải, im lặng X ms để game tự đánh mob;\nthoát sớm nếu phát hiện mob chết.");
-        any |= ImGui::DragInt("Dao động khoá đánh (ms)", &c.engagementLockJitterMs, 50, 0, 2000);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "Random hoá độ dài khoá ±jitter để né pattern detect.");
-        any |= ImGui::DragInt("Bán kính đánh (min)", &c.attackRadiusMin, 5, 20, 400);
-        any |= ImGui::DragInt("Bán kính đánh (max)", &c.attackRadiusMax, 5, 20, 400);
+            "Bật → chuột tự về safe spot, right-click theo interval bên dưới.\n"
+            "Sau buff cycle, click kế tiếp = F1 tap + right-click.\n"
+            "Random 5-10s fire 1 left-click humanizer ±10px để fake người thật.\n"
+            "Pot/refill/buff vẫn chạy bình thường.");
+        if (c.spamSkillEnabled) {
+            int iv = c.spamSkillIntervalMs;
+            if (ImGui::DragInt("Spam interval (ms)", &iv, 50, 100, 10000)) {
+                c.spamSkillIntervalMs = std::clamp(iv, 100, 10000);
+                any = true;
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Khoảng cách giữa 2 lần right-click.\n"
+                "MẸO: set ≈ cooldown skill ingame (đo bằng đồng hồ).\n"
+                "Set thấp hơn CD → click thừa khi skill chưa ready (wasted).\n"
+                "Set cao hơn CD → bỏ lỡ chu kỳ → DPS giảm.");
+        }
+        ImGui::Separator();
+
+        // Mob-targeting sliders — chỉ hiển thị khi KHÔNG ở spam mode (không liên quan).
+        if (!c.spamSkillEnabled) {
+            any |= ImGui::DragInt("Chờ tối thiểu khi đổi mục tiêu (ms)", &c.repickMinDwellMs, 100, 500, 10000);
+            any |= ImGui::DragInt("Chờ tối đa khi đổi mục tiêu (ms)", &c.repickMaxDwellMs, 100, 1000, 60000);
+            any |= ImGui::DragInt("Khoá đánh sau shift+phải (ms)", &c.engagementLockMs, 100, 1000, 15000);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Sau khi shift+chuột phải, im lặng X ms để game tự đánh mob;\nthoát sớm nếu phát hiện mob chết.");
+            any |= ImGui::DragInt("Dao động khoá đánh (ms)", &c.engagementLockJitterMs, 50, 0, 2000);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Random hoá độ dài khoá ±jitter để né pattern detect.");
+            any |= ImGui::DragInt("Bán kính đánh (min)", &c.attackRadiusMin, 5, 20, 400);
+            any |= ImGui::DragInt("Bán kính đánh (max)", &c.attackRadiusMax, 5, 20, 400);
+        }
+
         any |= ImGui::Checkbox("Chờ đủ MP mới buff", &c.waitMpGate);
         any |= percentInput("Ngưỡng MP để buff (%)", &c.waitMpGateThreshold, 100.0f);
 
@@ -300,7 +374,6 @@ void MainWindow::drawSettingsPanel() {
                 c.buffSafeSpotYPct = sy / 100.0;
                 any = true;
             }
-            ImGui::TextDisabled("Tọa độ chuột phải để confirm self-target.\nPick chỗ TRỐNG: không mob, không UI element.\nNếu trúng mob, skill sẽ biến thành đánh thường.");
         }
         if (any) markDirty();
     }
@@ -316,26 +389,27 @@ void MainWindow::drawSettingsPanel() {
         any |= ImGui::DragInt("SP mỗi N giây", &r.sp.intervalSec, 5, 0, 7200);
         any |= ImGui::DragInt("MP mỗi N giây", &r.mp.intervalSec, 5, 0, 7200);
 
-        ImGui::Separator();
-        ImGui::TextDisabled("Tọa độ pot trong kho được hardcode (đo từ PT, cố định).");
 
         ImGui::Separator();
-        ImGui::TextUnformatted("Tinh chỉnh");
-        any |= ImGui::DragInt("Chờ kho mở (ms)", &r.inventoryOpenDelayMs, 10, 100, 3000);
-        any |= ImGui::DragInt("Chờ kho đóng (ms)", &r.inventoryCloseDelayMs, 10, 50, 3000);
-        any |= ImGui::DragInt("Chờ chuột di chuyển (ms)", &r.mouseMoveDelayMs, 10, 50, 2000);
-        any |= ImGui::DragInt("Chờ sau Shift+N (ms)", &r.postHotkeyDelayMs, 10, 50, 2000);
-        any |= ImGui::DragInt("Timeout toàn refill (ms)", &r.refillTimeoutMs, 500, 2000, 60000);
-        {
-            float thr = (float)(r.hpCriticalAbortThreshold * 100.0);
-            if (ImGui::DragFloat("Ngưỡng abort khi HP thấp (%)", &thr, 1.0f, 5.0f, 90.0f, "%.0f%%")) {
-                r.hpCriticalAbortThreshold = thr / 100.0;
-                any = true;
+        // Tinh chỉnh: default collapsed — chỉ mở khi user cần đụng tới timing nâng cao.
+        if (ImGui::TreeNodeEx("Tinh chỉnh nạp pot##refill", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            any |= ImGui::DragInt("Chờ kho mở (ms)", &r.inventoryOpenDelayMs, 10, 100, 3000);
+            any |= ImGui::DragInt("Chờ kho đóng (ms)", &r.inventoryCloseDelayMs, 10, 50, 3000);
+            any |= ImGui::DragInt("Chờ chuột di chuyển (ms)", &r.mouseMoveDelayMs, 10, 50, 2000);
+            any |= ImGui::DragInt("Chờ sau Shift+N (ms)", &r.postHotkeyDelayMs, 10, 50, 2000);
+            any |= ImGui::DragInt("Timeout toàn refill (ms)", &r.refillTimeoutMs, 500, 2000, 60000);
+            {
+                float thr = (float)(r.hpCriticalAbortThreshold * 100.0);
+                if (ImGui::DragFloat("Ngưỡng abort khi HP thấp (%)", &thr, 1.0f, 5.0f, 90.0f, "%.0f%%")) {
+                    r.hpCriticalAbortThreshold = thr / 100.0;
+                    any = true;
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                    "Nếu HP tụt dưới ngưỡng này khi đang nạp pot, hủy nạp → đóng kho → uống pot HP ingame.");
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                "Nếu HP tụt dưới ngưỡng này khi đang nạp pot, hủy nạp → đóng kho → uống pot HP ingame.");
+            any |= ImGui::DragInt("Tạm dừng sau khi hủy (ms)", &r.abortBackoffMs, 1000, 5000, 300000);
+            ImGui::TreePop();
         }
-        any |= ImGui::DragInt("Tạm dừng sau khi hủy (ms)", &r.abortBackoffMs, 1000, 5000, 300000);
 
         if (any) markDirty();
     }
@@ -396,8 +470,6 @@ void MainWindow::drawSettingsPanel() {
         }
     }
 
-    ImGui::TextDisabled("Calibrate: sửa toạ độ ROI trong config.json (overlay kéo thả chưa làm).");
-
     if (ImGui::Button("Lưu ngay")) {
         loader_.save(configPath_, draft_);
         dirty_ = false;
@@ -405,6 +477,11 @@ void MainWindow::drawSettingsPanel() {
     ImGui::SameLine();
     ImGui::TextDisabled(dirty_ ? "(chưa lưu)" : "(đã lưu)");
 
+    // Capture content bottom Y trước khi End() để main loop tự-resize chiều cao
+    // window OS cho khớp content. ImGui::GetCursorPosY() = window-local coord.
+    lastContentBottomY_ = ImGui::GetCursorPosY();
+
+    ImGui::PopItemWidth();
     ImGui::End();
 }
 
@@ -413,6 +490,13 @@ void MainWindow::onResize(unsigned w, unsigned h) {
     dx_->resizeW = w;
     dx_->resizeH = h;
     dx_->pending = true;
+    // Phân biệt program-resize vs user-resize. Khi auto-fit kích hoạt
+    // SetWindowPos, WM_SIZE bắn lại với h = autoClientHLastApplied_ → skip flag.
+    // User drag border → h khác → set flag, dừng auto-fit sau đó.
+    if (autoClientHLastApplied_ > 0 &&
+        std::abs(static_cast<int>(h) - autoClientHLastApplied_) > 4) {
+        userResized_ = true;
+    }
 }
 
 void MainWindow::applyPendingResize() {
@@ -435,7 +519,28 @@ void MainWindow::renderFrame() {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
     drawSettingsPanel();
+    calibration_.draw(draft_.vision, [this]() { markDirty(); });
     ImGui::Render();
+
+    // Auto-fit chiều cao OS window theo content main panel (calibration là
+    // floating window riêng, không tính vào).
+    if (!userResized_ && lastContentBottomY_ > 0.0f && hwnd_) {
+        int desiredClientH = static_cast<int>(lastContentBottomY_) + 20;
+        RECT cr{};
+        GetClientRect(hwnd_, &cr);
+        int curClientH = cr.bottom - cr.top;
+        // Threshold 4 px để tránh oscillation từ rounding/scrollbar appearance.
+        if (std::abs(desiredClientH - curClientH) > 4) {
+            RECT wr{};
+            GetWindowRect(hwnd_, &wr);
+            int ncH = (wr.bottom - wr.top) - curClientH;
+            int newH = desiredClientH + ncH;
+            // Ghi BEFORE SetWindowPos để onResize không nhầm là user-resized.
+            autoClientHLastApplied_ = desiredClientH;
+            SetWindowPos(hwnd_, nullptr, 0, 0, wr.right - wr.left, newH,
+                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
 
     const float clear[4] = { 0.92f, 0.92f, 0.94f, 1.0f };
     dx_->ctx->OMSetRenderTargets(1, dx_->rtv.GetAddressOf(), nullptr);

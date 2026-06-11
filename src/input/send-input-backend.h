@@ -16,6 +16,7 @@ public:
     void sendKeyUp(WORD vk) override;
     void sendRightClick(int x, int y) override;
     void sendShiftRightClick(int x, int y) override;
+    void sendLeftClick(int x, int y) override;
     void sendMouseMove(int x, int y) override;
     void setMousePathEnabled(bool enabled) override { mousePathEnabled_.store(enabled); }
     bool requiresForeground() const override { return true; }

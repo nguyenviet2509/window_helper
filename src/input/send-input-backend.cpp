@@ -98,6 +98,17 @@ void SendInputBackend::sendRightClick(int x, int y) {
     mouseButton(true, false);
 }
 
+void SendInputBackend::sendLeftClick(int x, int y) {
+    executePath(x, y);                                   // Bezier path từ cursor hiện tại
+    LONG ax, ay;
+    clientToScreenAbs(x, y, ax, ay);
+    moveAbs(ax, ay);                                     // snap đến điểm cuối
+    std::this_thread::sleep_for(std::chrono::milliseconds(8));
+    mouseButton(false, true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    mouseButton(false, false);
+}
+
 void SendInputBackend::sendShiftRightClick(int x, int y) {
     pressKey(VK_LSHIFT, true);
     std::this_thread::sleep_for(std::chrono::milliseconds(8));
