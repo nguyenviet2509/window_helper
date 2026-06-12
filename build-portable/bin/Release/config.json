@@ -1,0 +1,161 @@
+{
+  "combat": {
+    "attackCooldownMs": 350,
+    "attackRadiusMax": 140,
+    "attackRadiusMin": 50,
+    "buffEnabled": false,
+    "buffSafeSpotXPct": 0.5,
+    "buffSafeSpotYPct": 0.5,
+    "buffs": [
+      {
+        "animationMs": 800,
+        "enabled": true,
+        "key": 113,
+        "postBuffGapMs": 150,
+        "rebuffIntervalSec": 300,
+        "rightClickAfter": true,
+        "rightClickDelayMs": 100
+      },
+      {
+        "animationMs": 800,
+        "enabled": true,
+        "key": 114,
+        "postBuffGapMs": 150,
+        "rebuffIntervalSec": 300,
+        "rightClickAfter": true,
+        "rightClickDelayMs": 100
+      },
+      {
+        "animationMs": 800,
+        "enabled": true,
+        "key": 115,
+        "postBuffGapMs": 150,
+        "rebuffIntervalSec": 300,
+        "rightClickAfter": true,
+        "rightClickDelayMs": 100
+      },
+      {
+        "animationMs": 800,
+        "enabled": true,
+        "key": 116,
+        "postBuffGapMs": 150,
+        "rebuffIntervalSec": 300,
+        "rightClickAfter": true,
+        "rightClickDelayMs": 100
+      },
+      {
+        "animationMs": 800,
+        "enabled": true,
+        "key": 117,
+        "postBuffGapMs": 150,
+        "rebuffIntervalSec": 300,
+        "rightClickAfter": true,
+        "rightClickDelayMs": 100
+      }
+    ],
+    "deathConfirmMs": 2500,
+    "enableMousePath": true,
+    "enabled": false,
+    "engagementLockJitterMs": 800,
+    "engagementLockMs": 2500,
+    "mainAttackKey": 112,
+    "mpDropEpsilon": 0.005,
+    "repickMaxDwellMs": 22000,
+    "repickMinDwellMs": 6000,
+    "spamSkillEnabled": false,
+    "spamSkillIntervalMs": 1000,
+    "waitMpGate": true,
+    "waitMpGateThreshold": 0.15
+  },
+  "defaultBackend": "SendInput",
+  "pot": {
+    "confirmFrames": 2,
+    "cooldownMs": 600,
+    "holdMs": 30,
+    "hpKey": 49,
+    "hpRecallStableMs": 3000,
+    "hpRecallThreshold": 0.18,
+    "hpThreshold": 0.55,
+    "mpKey": 51,
+    "mpThreshold": 0.4,
+    "recallKey": 123,
+    "spKey": 50,
+    "spThreshold": 0.4
+  },
+  "refill": {
+    "abortBackoffMs": 30000,
+    "enabled": false,
+    "hp": {
+      "intervalSec": 0
+    },
+    "hpCriticalAbortThreshold": 0.3,
+    "inventoryCloseDelayMs": 200,
+    "inventoryOpenDelayMs": 400,
+    "inventoryToggleKey": 86,
+    "mouseMoveDelayMs": 150,
+    "mp": {
+      "intervalSec": 0
+    },
+    "postHotkeyDelayMs": 200,
+    "refillTimeoutMs": 10000,
+    "sp": {
+      "intervalSec": 0
+    }
+  },
+  "vision": {
+    "frameHeight": 789,
+    "frameWidth": 1010,
+    "hp": {
+      "hues": [
+        {
+          "hi": 10,
+          "lo": 0
+        },
+        {
+          "hi": 180,
+          "lo": 170
+        }
+      ],
+      "region": {
+        "h": 121,
+        "radius": 0,
+        "shape": "rect",
+        "w": 22,
+        "x": 403,
+        "y": 656
+      }
+    },
+    "mp": {
+      "hues": [
+        {
+          "hi": 130,
+          "lo": 100
+        }
+      ],
+      "region": {
+        "h": 121,
+        "radius": 0,
+        "shape": "rect",
+        "w": 21,
+        "x": 586,
+        "y": 655
+      }
+    },
+    "sp": {
+      "hues": [
+        {
+          "hi": 80,
+          "lo": 40
+        }
+      ],
+      "region": {
+        "h": 102,
+        "radius": 0,
+        "shape": "rect",
+        "w": 11,
+        "x": 383,
+        "y": 675
+      }
+    }
+  }
+}

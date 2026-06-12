@@ -1,11 +1,13 @@
 ﻿# package.ps1 — Build portable static exe + đóng gói zip để share.
-# Usage: .\package.ps1                       (build + package)
+# Usage: .\package.ps1                       (build + package, license gate BẬT)
+#        .\package.ps1 -NoLicense            (build cho người thân — bỏ license gate)
 #        .\package.ps1 -SkipBuild            (chỉ package từ build hiện tại)
 #        .\package.ps1 -OutDir D:\release    (custom output dir)
 #        .\package.ps1 -Version 1.2.3        (suffix vào tên zip)
 
 param(
     [switch]$SkipBuild,
+    [switch]$NoLicense,
     [string]$OutDir = "dist",
     [string]$Version = ""
 )
@@ -16,8 +18,14 @@ if (-not (Test-Path $cmake)) { $cmake = (Get-Command cmake.exe -ErrorAction Sile
 if (-not $cmake) { Write-Error "cmake.exe không tìm thấy"; exit 1 }
 
 if (-not $SkipBuild) {
-    Write-Host "[1/4] Configure portable preset (always re-configure for clean flag state)..." -ForegroundColor Cyan
-    & $cmake --preset portable
+    $licenseMsg = if ($NoLicense) { "OFF (build cho người thân — bỏ gate)" } else { "ON (license gate active)" }
+    Write-Host "[1/4] Configure portable preset — WH_REQUIRE_LICENSE=$licenseMsg" -ForegroundColor Cyan
+    # -DWH_REQUIRE_LICENSE override cache var của preset; phải re-configure để flag áp dụng.
+    if ($NoLicense) {
+        & $cmake --preset portable -DWH_REQUIRE_LICENSE=OFF
+    } else {
+        & $cmake --preset portable -DWH_REQUIRE_LICENSE=ON
+    }
     if ($LASTEXITCODE -ne 0) { Write-Error "Configure failed"; exit 1 }
 
     Write-Host "[2/4] Build static exe..." -ForegroundColor Cyan
@@ -65,6 +73,8 @@ $readme | Out-File -Encoding UTF8 "$OutDir\README.txt"
 Write-Host "[4/4] Zip..." -ForegroundColor Cyan
 $ts = Get-Date -Format "yyMMdd-HHmm"
 $suffix = if ($Version) { "-v$Version" } else { "-$ts" }
+# Suffix -free để phân biệt build không license với build chính thức.
+if ($NoLicense) { $suffix = "$suffix-free" }
 $zipName = "WindowHelper$suffix.zip"
 if (Test-Path $zipName) { Remove-Item $zipName -Force }
 Compress-Archive -Path "$OutDir\*" -DestinationPath $zipName
@@ -79,4 +89,8 @@ Write-Host "  Folder:  $OutDir\ ($((Get-ChildItem $OutDir).Count) files)"
 Write-Host "  Zip:     $zipName ($zipSize MB)"
 Write-Host ""
 Write-Host "Gửi $zipName cho user. Họ extract -> chạy $($exe.Name) -> xong." -ForegroundColor Cyan
-Write-Host "License enforcement: ENABLED (WH_REQUIRE_LICENSE=ON via portable preset)" -ForegroundColor Magenta
+if ($NoLicense) {
+    Write-Host "License enforcement: DISABLED (build cho người thân — không cần token)" -ForegroundColor Yellow
+} else {
+    Write-Host "License enforcement: ENABLED (WH_REQUIRE_LICENSE=ON)" -ForegroundColor Magenta
+}

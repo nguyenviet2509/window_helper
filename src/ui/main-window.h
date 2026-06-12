@@ -56,6 +56,10 @@ private:
     void drawSettingsPanel();
     void markDirty();
     void flushIfDue();
+    // Wrap return của 1 ImGui control: ghi nhận field vừa sửa + hiện
+    // "✓ Đã lưu" cạnh nó trong ~2s sau khi flush. Trả về `changed` nguyên gốc.
+    bool editField(bool changed);
+    void drawSavedHint();
 
     HWND hwnd_ = nullptr;
     bool initialized_ = false;
@@ -69,12 +73,22 @@ private:
     std::chrono::steady_clock::time_point lastChangeAt_{};
     int debounceMs_ = 500;
 
+    // Per-field saved hint: ID của control sửa gần nhất, ID + thời điểm save gần nhất.
+    // `unsigned int` thay vì ImGuiID để khỏi include imgui.h ở header.
+    unsigned int lastEditedItemId_ = 0;
+    unsigned int lastSavedItemId_ = 0;
+    std::chrono::steady_clock::time_point lastSavedAt_{};
+    int savedHintMs_ = 2000;
+
     // Auto-fit chiều cao cửa sổ tới content cho đến khi user tự resize manual.
     // Mục đích: hiển thị hết settings + nút Calibrate mà không cần scroll khi mở.
     // userResized_ set true khi WM_SIZE đến với h khác autoClientHLastApplied_.
     float lastContentBottomY_ = 0.0f;
     int   autoClientHLastApplied_ = 0;
     bool  userResized_ = false;
+    // Trần cho auto-fit: khoá ở chiều cao lần đo đầu tiên. Mở thêm
+    // collapsible (Buff/Tinh chỉnh) sẽ scroll trong ImGui, không grow window OS.
+    int   autoFitCeilingH_ = 0;
 
     std::function<void(bool)> onCombatToggle_;
     std::function<void(bool)> onBuffToggle_;

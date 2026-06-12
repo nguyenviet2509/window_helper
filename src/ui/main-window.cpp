@@ -122,6 +122,12 @@ MainWindow::MainWindow(ConfigBus& bus, ConfigLoader& loader, std::string path)
 }
 
 MainWindow::~MainWindow() {
+    // Force-flush bỏ qua debounce: tránh mất sửa đổi cuối nếu user đóng app
+    // trong cửa sổ debounce 500ms của flushIfDue().
+    if (dirty_) {
+        loader_.save(configPath_, draft_);
+        dirty_ = false;
+    }
     if (initialized_) {
         ImGui_ImplDX11_Shutdown();
         ImGui_ImplWin32_Shutdown();
@@ -195,7 +201,27 @@ void MainWindow::flushIfDue() {
     bus_.publish(snap);
     loader_.save(configPath_, draft_);
     dirty_ = false;
+    lastSavedItemId_ = lastEditedItemId_;
+    lastSavedAt_ = now;
     if (onConfigChanged_) onConfigChanged_(*snap);
+}
+
+bool MainWindow::editField(bool changed) {
+    if (changed) {
+        lastEditedItemId_ = (unsigned int)ImGui::GetItemID();
+        markDirty();
+    }
+    drawSavedHint();
+    return changed;
+}
+
+void MainWindow::drawSavedHint() {
+    if (lastSavedItemId_ == 0) return;
+    if ((unsigned int)ImGui::GetItemID() != lastSavedItemId_) return;
+    auto age = std::chrono::steady_clock::now() - lastSavedAt_;
+    if (age >= std::chrono::milliseconds(savedHintMs_)) return;
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), "Đã lưu");
 }
 
 void MainWindow::drawSettingsPanel() {
@@ -275,16 +301,14 @@ void MainWindow::drawSettingsPanel() {
     ImGui::Separator();
 
     bool combatOn = draft_.combat.enabled;
-    if (ImGui::Checkbox("AUTO (F8 — Đánh quái)", &combatOn)) {
+    if (editField(ImGui::Checkbox("AUTO (F8 — Đánh quái)", &combatOn))) {
         draft_.combat.enabled = combatOn;
         if (onCombatToggle_) onCombatToggle_(combatOn);
-        markDirty();
     }
     bool buffOn = draft_.combat.buffEnabled;
-    if (ImGui::Checkbox("Bật Buff (F9)", &buffOn)) {
+    if (editField(ImGui::Checkbox("Bật Buff (F9)", &buffOn))) {
         draft_.combat.buffEnabled = buffOn;
         if (onBuffToggle_) onBuffToggle_(buffOn);
-        markDirty();
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip(
         "Master gate cho toàn bộ buff. Tắt → bot không cast bất kỳ buff nào,\n"
@@ -304,27 +328,16 @@ void MainWindow::drawSettingsPanel() {
 
     if (ImGui::CollapsingHeader("Hồi phục", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto& p = draft_.pot;
-        bool any = false;
-        any |= percentInput("Ngưỡng hồi HP (%)", &p.hpThreshold, 100.0f);
-        any |= percentInput("Ngưỡng hồi MP (%)", &p.mpThreshold, 100.0f);
-        any |= percentInput("Ngưỡng hồi SP (%)", &p.spThreshold, 100.0f);
-        // Recall (F12 bùa hồi thành) tạm ẩn UI; logic vẫn chạy theo giá trị
-        // trong config.json. Bỏ comment 2 dòng dưới khi cần expose lại.
-        // any |= percentInput("Ngưỡng recall HP (%)", &p.hpRecallThreshold, 50.0f);
-        // any |= ImGui::DragInt("Recall ổn định (ms)", &p.hpRecallStableMs, 100, 500, 10000);
-        // Cooldown bình + Số frame xác nhận: logic vẫn chạy theo config.json.
-        // Bỏ comment 2 dòng dưới khi cần expose lại.
-        // any |= ImGui::DragInt("Cooldown bình (ms)", &p.cooldownMs, 50, 200, 3000);
-        // any |= ImGui::DragInt("Số frame xác nhận", &p.confirmFrames, 1, 1, 5);
-        if (any) markDirty();
+        editField(percentInput("Ngưỡng hồi HP (%)", &p.hpThreshold, 100.0f));
+        editField(percentInput("Ngưỡng hồi MP (%)", &p.mpThreshold, 100.0f));
+        editField(percentInput("Ngưỡng hồi SP (%)", &p.spThreshold, 100.0f));
     }
 
     if (ImGui::CollapsingHeader("Đánh quái", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto& c = draft_.combat;
-        bool any = false;
 
         // Spam skill mode: bỏ qua mob targeting, chỉ right-click lặp tại safe spot.
-        any |= ImGui::Checkbox("Spam skill (bỏ qua mob, right-click safe spot)", &c.spamSkillEnabled);
+        editField(ImGui::Checkbox("Spam skill (bỏ qua mob, right-click safe spot)", &c.spamSkillEnabled));
         if (ImGui::IsItemHovered()) ImGui::SetTooltip(
             "Bật → chuột tự về safe spot, right-click theo interval bên dưới.\n"
             "Sau buff cycle, click kế tiếp = F1 tap + right-click.\n"
@@ -332,9 +345,8 @@ void MainWindow::drawSettingsPanel() {
             "Pot/refill/buff vẫn chạy bình thường.");
         if (c.spamSkillEnabled) {
             int iv = c.spamSkillIntervalMs;
-            if (ImGui::DragInt("Spam interval (ms)", &iv, 50, 100, 10000)) {
+            if (editField(ImGui::DragInt("Spam interval (ms)", &iv, 50, 100, 10000))) {
                 c.spamSkillIntervalMs = std::clamp(iv, 100, 10000);
-                any = true;
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                 "Khoảng cách giữa 2 lần right-click.\n"
@@ -346,101 +358,76 @@ void MainWindow::drawSettingsPanel() {
 
         // Mob-targeting sliders — chỉ hiển thị khi KHÔNG ở spam mode (không liên quan).
         if (!c.spamSkillEnabled) {
-            any |= ImGui::DragInt("Chờ tối thiểu khi đổi mục tiêu (ms)", &c.repickMinDwellMs, 100, 500, 10000);
-            any |= ImGui::DragInt("Chờ tối đa khi đổi mục tiêu (ms)", &c.repickMaxDwellMs, 100, 1000, 60000);
-            any |= ImGui::DragInt("Khoá đánh sau shift+phải (ms)", &c.engagementLockMs, 100, 1000, 15000);
+            editField(ImGui::DragInt("Chờ tối thiểu khi đổi mục tiêu (ms)", &c.repickMinDwellMs, 100, 500, 10000));
+            editField(ImGui::DragInt("Chờ tối đa khi đổi mục tiêu (ms)", &c.repickMaxDwellMs, 100, 1000, 60000));
+            editField(ImGui::DragInt("Khoá đánh sau shift+phải (ms)", &c.engagementLockMs, 100, 1000, 15000));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                 "Sau khi shift+chuột phải, im lặng X ms để game tự đánh mob;\nthoát sớm nếu phát hiện mob chết.");
-            any |= ImGui::DragInt("Dao động khoá đánh (ms)", &c.engagementLockJitterMs, 50, 0, 2000);
+            editField(ImGui::DragInt("Dao động khoá đánh (ms)", &c.engagementLockJitterMs, 50, 0, 2000));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                 "Random hoá độ dài khoá ±jitter để né pattern detect.");
-            any |= ImGui::DragInt("Bán kính đánh (min)", &c.attackRadiusMin, 5, 20, 400);
-            any |= ImGui::DragInt("Bán kính đánh (max)", &c.attackRadiusMax, 5, 20, 400);
+            editField(ImGui::DragInt("Bán kính đánh (min)", &c.attackRadiusMin, 5, 20, 400));
+            editField(ImGui::DragInt("Bán kính đánh (max)", &c.attackRadiusMax, 5, 20, 400));
         }
-
-        any |= ImGui::Checkbox("Chờ đủ MP mới buff", &c.waitMpGate);
-        any |= percentInput("Ngưỡng MP để buff (%)", &c.waitMpGateThreshold, 100.0f);
-
-        ImGui::Separator();
-        ImGui::TextUnformatted("Safe spot chuột phải khi buff");
-        {
-            float sx = (float)(c.buffSafeSpotXPct * 100.0);
-            float sy = (float)(c.buffSafeSpotYPct * 100.0);
-            if (ImGui::SliderFloat("Safe spot X (%)", &sx, 5.0f, 95.0f, "%.0f%%")) {
-                c.buffSafeSpotXPct = sx / 100.0;
-                any = true;
-            }
-            if (ImGui::SliderFloat("Safe spot Y (%)", &sy, 5.0f, 95.0f, "%.0f%%")) {
-                c.buffSafeSpotYPct = sy / 100.0;
-                any = true;
-            }
-        }
-        if (any) markDirty();
     }
 
     if (ImGui::CollapsingHeader("Nạp pot từ kho", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto& r = draft_.refill;
-        bool any = false;
-        any |= ImGui::Checkbox("Bật nạp pot tự động", &r.enabled);
+        editField(ImGui::Checkbox("Bật nạp pot tự động", &r.enabled));
 
         ImGui::Separator();
         ImGui::TextUnformatted("Thời gian nạp lại (giây) — 0 = tắt");
-        any |= ImGui::DragInt("HP mỗi N giây", &r.hp.intervalSec, 5, 0, 7200);
-        any |= ImGui::DragInt("SP mỗi N giây", &r.sp.intervalSec, 5, 0, 7200);
-        any |= ImGui::DragInt("MP mỗi N giây", &r.mp.intervalSec, 5, 0, 7200);
+        editField(ImGui::DragInt("HP mỗi N giây", &r.hp.intervalSec, 5, 0, 7200));
+        editField(ImGui::DragInt("SP mỗi N giây", &r.sp.intervalSec, 5, 0, 7200));
+        editField(ImGui::DragInt("MP mỗi N giây", &r.mp.intervalSec, 5, 0, 7200));
 
 
         ImGui::Separator();
         // Tinh chỉnh: default collapsed — chỉ mở khi user cần đụng tới timing nâng cao.
         if (ImGui::TreeNodeEx("Tinh chỉnh nạp pot##refill", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-            any |= ImGui::DragInt("Chờ kho mở (ms)", &r.inventoryOpenDelayMs, 10, 100, 3000);
-            any |= ImGui::DragInt("Chờ kho đóng (ms)", &r.inventoryCloseDelayMs, 10, 50, 3000);
-            any |= ImGui::DragInt("Chờ chuột di chuyển (ms)", &r.mouseMoveDelayMs, 10, 50, 2000);
-            any |= ImGui::DragInt("Chờ sau Shift+N (ms)", &r.postHotkeyDelayMs, 10, 50, 2000);
-            any |= ImGui::DragInt("Timeout toàn refill (ms)", &r.refillTimeoutMs, 500, 2000, 60000);
+            editField(ImGui::DragInt("Chờ kho mở (ms)", &r.inventoryOpenDelayMs, 10, 100, 3000));
+            editField(ImGui::DragInt("Chờ kho đóng (ms)", &r.inventoryCloseDelayMs, 10, 50, 3000));
+            editField(ImGui::DragInt("Chờ chuột di chuyển (ms)", &r.mouseMoveDelayMs, 10, 50, 2000));
+            editField(ImGui::DragInt("Chờ sau Shift+N (ms)", &r.postHotkeyDelayMs, 10, 50, 2000));
+            editField(ImGui::DragInt("Timeout toàn refill (ms)", &r.refillTimeoutMs, 500, 2000, 60000));
             {
                 float thr = (float)(r.hpCriticalAbortThreshold * 100.0);
-                if (ImGui::DragFloat("Ngưỡng abort khi HP thấp (%)", &thr, 1.0f, 5.0f, 90.0f, "%.0f%%")) {
+                if (editField(ImGui::DragFloat("Ngưỡng abort khi HP thấp (%)", &thr, 1.0f, 5.0f, 90.0f, "%.0f%%"))) {
                     r.hpCriticalAbortThreshold = thr / 100.0;
-                    any = true;
                 }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                     "Nếu HP tụt dưới ngưỡng này khi đang nạp pot, hủy nạp → đóng kho → uống pot HP ingame.");
             }
-            any |= ImGui::DragInt("Tạm dừng sau khi hủy (ms)", &r.abortBackoffMs, 1000, 5000, 300000);
+            editField(ImGui::DragInt("Tạm dừng sau khi hủy (ms)", &r.abortBackoffMs, 1000, 5000, 300000));
             ImGui::TreePop();
         }
-
-        if (any) markDirty();
     }
 
     if (ImGui::CollapsingHeader("Buff")) {
         for (size_t i = 0; i < draft_.combat.buffs.size(); ++i) {
             auto& b = draft_.combat.buffs[i];
             ImGui::PushID((int)i);
-            bool any = false;
             char label[48]; snprintf(label, sizeof(label), "Bật buff %zu", i);
-            any |= ImGui::Checkbox(label, &b.enabled);
+            editField(ImGui::Checkbox(label, &b.enabled));
             // F1=0x70 ... F12=0x7B; combo index 0..11 maps to VK code.
             static const char* kFnNames =
                 "F1\0F2\0F3\0F4\0F5\0F6\0F7\0F8\0F9\0F10\0F11\0F12\0";
             int fnIdx = static_cast<int>(b.key) - 0x70;
             if (fnIdx < 0) fnIdx = 0;
             if (fnIdx > 11) fnIdx = 11;
-            if (ImGui::Combo("Mã phím", &fnIdx, kFnNames)) {
+            if (editField(ImGui::Combo("Mã phím", &fnIdx, kFnNames))) {
                 b.key = static_cast<WORD>(0x70 + fnIdx);
-                any = true;
             }
-            any |= ImGui::DragInt("Animation cast (ms)", &b.animationMs, 10, 200, 3000);
+            editField(ImGui::DragInt("Animation cast (ms)", &b.animationMs, 10, 200, 3000));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                 "Thời gian animation cast skill. Phải >= animation thực để không bị cancel.");
-            any |= ImGui::DragInt("Delay chuột phải (ms)", &b.rightClickDelayMs, 5, 0, 500);
+            editField(ImGui::DragInt("Delay chuột phải (ms)", &b.rightClickDelayMs, 5, 0, 500));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                 "Delay từ bấm F đến right-click. Chờ game đổi cursor self-target.");
-            any |= ImGui::DragInt("Gap sang buff sau (ms)", &b.postBuffGapMs, 5, 0, 1000);
+            editField(ImGui::DragInt("Gap sang buff sau (ms)", &b.postBuffGapMs, 5, 0, 1000));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                 "Khoảng đệm an toàn trước khi bấm buff kế tiếp.");
-            any |= ImGui::DragInt("Chu kỳ rebuff (giây)", &b.rebuffIntervalSec, 5, 10, 7200);
+            editField(ImGui::DragInt("Chu kỳ rebuff (giây)", &b.rebuffIntervalSec, 5, 10, 7200));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                 "Cast lại buff này sau N giây. Đặt theo duration thực của buff in-game.\n"
                 "Quá thấp (< 60s) sẽ liên tục ngắt đánh quái.");
@@ -448,10 +435,9 @@ void MainWindow::drawSettingsPanel() {
                 ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f),
                     "Canh bao: chu ky < 60s se ngat danh lien tuc.");
             }
-            any |= ImGui::Checkbox("Chuột phải sau buff", &b.rightClickAfter);
+            editField(ImGui::Checkbox("Chuột phải sau buff", &b.rightClickAfter));
             ImGui::Separator();
             ImGui::PopID();
-            if (any) markDirty();
         }
 
         // Cảnh báo nếu tổng thời gian 1 vòng buff vượt rebuff interval ngắn nhất.
@@ -469,13 +455,6 @@ void MainWindow::drawSettingsPanel() {
                 totalBuffMs, minIntervalMs);
         }
     }
-
-    if (ImGui::Button("Lưu ngay")) {
-        loader_.save(configPath_, draft_);
-        dirty_ = false;
-    }
-    ImGui::SameLine();
-    ImGui::TextDisabled(dirty_ ? "(chưa lưu)" : "(đã lưu)");
 
     // Capture content bottom Y trước khi End() để main loop tự-resize chiều cao
     // window OS cho khớp content. ImGui::GetCursorPosY() = window-local coord.
@@ -519,7 +498,8 @@ void MainWindow::renderFrame() {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
     drawSettingsPanel();
-    calibration_.draw(draft_.vision, [this]() { markDirty(); });
+    // Calibration window là cửa sổ riêng — không neo hint per-field ở main panel.
+    calibration_.draw(draft_.vision, [this]() { lastEditedItemId_ = 0; markDirty(); });
     // Frame overlay: license info dialog, toast notifications, etc.
     if (onFrameOverlay_) onFrameOverlay_();
     ImGui::Render();
@@ -528,6 +508,11 @@ void MainWindow::renderFrame() {
     // floating window riêng, không tính vào).
     if (!userResized_ && lastContentBottomY_ > 0.0f && hwnd_) {
         int desiredClientH = static_cast<int>(lastContentBottomY_) + 20;
+        // Sau khi trần được thiết lập (lần auto-fit đầu): cap chiều cao tại đó.
+        // Mở Buff/Tinh chỉnh sẽ vượt trần → ImGui hiện scrollbar trong panel.
+        if (autoFitCeilingH_ > 0 && desiredClientH > autoFitCeilingH_) {
+            desiredClientH = autoFitCeilingH_;
+        }
         RECT cr{};
         GetClientRect(hwnd_, &cr);
         int curClientH = cr.bottom - cr.top;
@@ -539,6 +524,7 @@ void MainWindow::renderFrame() {
             int newH = desiredClientH + ncH;
             // Ghi BEFORE SetWindowPos để onResize không nhầm là user-resized.
             autoClientHLastApplied_ = desiredClientH;
+            if (autoFitCeilingH_ == 0) autoFitCeilingH_ = desiredClientH;
             SetWindowPos(hwnd_, nullptr, 0, 0, wr.right - wr.left, newH,
                          SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
         }
@@ -572,12 +558,15 @@ void MainWindow::renderActivationFrame(std::function<void()> overlay) {
 void MainWindow::toggleCombatRequested() {
     draft_.combat.enabled = !draft_.combat.enabled;
     if (onCombatToggle_) onCombatToggle_(draft_.combat.enabled);
+    // Hotkey path: clear field tracking để hint không neo nhầm vào control cũ.
+    lastEditedItemId_ = 0;
     markDirty();
 }
 
 void MainWindow::toggleBuffRequested() {
     draft_.combat.buffEnabled = !draft_.combat.buffEnabled;
     if (onBuffToggle_) onBuffToggle_(draft_.combat.buffEnabled);
+    lastEditedItemId_ = 0;
     markDirty();
 }
 
